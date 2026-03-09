@@ -1,10 +1,21 @@
+import argparse
 import serial
 import time
 
 
-def open_port():
+DEFAULT_PORT = '/dev/ttyACM0'
+
+
+def get_parser():
+    parser = argparse.ArgumentParser(description='Communicate with the serial port')
+    parser.add_argument('command')
+    parser.add_argument('--port', default='/dev/ttyACM0')
+    return parser
+
+
+def open_port(port='/dev/ttyACM0'):
     return serial.Serial(
-        port='/dev/ttyACM0',
+        port=port,
         baudrate=57600,  # from your STA output
         bytesize=serial.EIGHTBITS,
         parity=serial.PARITY_NONE,
@@ -14,18 +25,22 @@ def open_port():
 
 def send_command(ser, cmd: str) -> str:
     ser.write(f'{cmd}\r'.encode('ascii'))
-    # TODO: wait for the full response instead of just sleeping
+    # TODO: wait for the full response (ending with a carriage return) instead
+    # of just sleeping
     time.sleep(0.5)
     return ser.read_all().decode('ascii')
 
 
 def main():
-    with open_port() as ser:
-        print(send_command(ser, 'STA'))
-        print()
-        print()
-        print(send_command(ser, 'H'))
-        print()
+    args = get_parser().parse_args()
+
+    with open_port(args.port) as ser:
+        # remove spaces in command
+        cmd = args.command.replace(' ', '')
+        if not cmd:
+            print('No command provided')
+            return
+        print(send_command(ser, cmd))
 
 
 if __name__ == '__main__':
