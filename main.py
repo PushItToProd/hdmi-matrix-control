@@ -18,9 +18,14 @@ def send_command(cmd: str) -> str:
     return ser.read_all().decode('ascii')
 
 
-print(send_command('STA'))
-print()
-print()
-print(send_command('H'))
-print()
-ser.close()
+def main():
+    print(send_command('STA'))
+    print()
+    print()
+    print(send_command('H'))
+    print()
+    ser.close()
+
+
+if __name__ == '__main__':
+    main()
