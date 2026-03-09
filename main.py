@@ -27,7 +27,7 @@ def send_command(ser, cmd: str) -> str:
     ser.write(f'{cmd}\r'.encode('ascii'))
     # TODO: wait for the full response (ending with a carriage return) instead
     # of just sleeping
-    time.sleep(0.5)
+    time.sleep(0.1)
     return ser.read_all().decode('ascii')
 
 
