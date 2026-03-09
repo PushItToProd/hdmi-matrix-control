@@ -2,16 +2,17 @@ import serial
 import time
 
 
-ser = serial.Serial(
-    port='/dev/ttyACM0',
-    baudrate=57600,  # from your STA output
-    bytesize=serial.EIGHTBITS,
-    parity=serial.PARITY_NONE,
-    stopbits=serial.STOPBITS_ONE,
-    timeout=1
-)
+def open_port():
+    return serial.Serial(
+        port='/dev/ttyACM0',
+        baudrate=57600,  # from your STA output
+        bytesize=serial.EIGHTBITS,
+        parity=serial.PARITY_NONE,
+        stopbits=serial.STOPBITS_ONE,
+        timeout=1
+    )
 
-def send_command(cmd: str) -> str:
+def send_command(ser, cmd: str) -> str:
     ser.write(f'{cmd}\r'.encode('ascii'))
     # TODO: wait for the full response instead of just sleeping
     time.sleep(0.5)
@@ -19,12 +20,12 @@ def send_command(cmd: str) -> str:
 
 
 def main():
-    print(send_command('STA'))
-    print()
-    print()
-    print(send_command('H'))
-    print()
-    ser.close()
+    with open_port() as ser:
+        print(send_command(ser, 'STA'))
+        print()
+        print()
+        print(send_command(ser, 'H'))
+        print()
 
 
 if __name__ == '__main__':
