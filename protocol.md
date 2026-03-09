@@ -5,7 +5,8 @@
 The manual for the PORTTA VALUE HDMI 4x2 Matrix, 4K30Hz Quad Multi Viewer provides the following info on the 4PET0402QMS's RS232 control protocol:
 
 ```
-Baud Rate = 57600 bits per second as default Data Bits = 8  
+Baud Rate = 57600 bits per second as default  
+Data Bits = 8  
 Stop Bits = 1  
 Parity = None  
 Flow Control = None 
@@ -27,9 +28,14 @@ Can be used as RS-232 control port
 Baud rate is 57600
 ```
 
+Although the notes above state "The response terminates with a carriage return followed by a line feed \[CRLF\]", this isn't necessarily true/useful for all commands: 
+
+- The `STA` and `H` commands use CRLF for all newlines, so just reading until the first CRLF won't get the full output.
+- Commands sent to the HDMI matrix are echoed back, including the CRLF at the end, so we need to read at least two lines to get the full response.
+
 ## Commands
 
-Sample output of `H` (help) command listing all commands:
+Sample output of `H` (help) command listing all commands: (Extra newlines omitted for brevity)
 
 ```
 -------------------------------------------------------------------------
@@ -90,9 +96,11 @@ Sample output of `H` (help) command listing all commands:
 
 ### Sample command output
 
-Sample output of the `STA` (status) command:
+Sample output of the `STA` (status) command: (Extra newlines omitted for brevity.)
 
 ```
+STA
+
 -------------------------------------------------------------------------
 --                           Systems STATUS                            --
 -------------------------------------------------------------------------
@@ -118,15 +126,20 @@ Sample output of the `STA` (status) command:
 <s>STA</s><user>Show Global System Status</user>
 ```
 
-
 Output of `spobsi04` (set output B to input 4):
 
 ```
-<s>spobsi01I04</s><user>Set Output B to Video Input 04</user>
+spoBsi01
+
+<s>SPOBSI01</s><user>Set Output B to Video Input 01</user>
+
 ```
 
 Output of `sbobsi01` (set output B to input 1):
 
 ```
-<s>SPOBSI01</s><user>Set Output B to Video Input 01</user>
+spobsi04
+
+<s>SPOBSI04</s><user>Set Output B to Video Input 04</user>
+
 ```
