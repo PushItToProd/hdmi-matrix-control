@@ -1,0 +1,8 @@
+[project]
+name = "portta-multiviewer-control"
+version = "0.1.0"
+description = "Utility for controlling PORTTA 4x2 multiviewer via its USB CDC RS232 serial protocol"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+license = "AGPL-3.0-or-later"
