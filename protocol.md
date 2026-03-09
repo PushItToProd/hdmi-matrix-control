@@ -1,5 +1,7 @@
 # RS232 Protocol Notes
 
+## Basic info
+
 The manual for the PORTTA VALUE HDMI 4x2 Matrix, 4K30Hz Quad Multi Viewer provides the following info on the 4PET0402QMS's RS232 control protocol:
 
 ```
@@ -24,6 +26,8 @@ Supports USB driver for Windows 8.1/10/11, Mac OS 10.10 above. Will register as 
 Can be used as RS-232 control port  
 Baud rate is 57600
 ```
+
+## Commands
 
 Sample output of `H` (help) command listing all commands:
 
@@ -83,6 +87,8 @@ Sample output of `H` (help) command listing all commands:
 -- SPC DF: Reset to Factory Defaults                                   --
 ----------
 ```
+
+### Sample command output
 
 Sample output of the `STA` (status) command:
 
