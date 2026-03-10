@@ -7,7 +7,8 @@
 - [ ] parse output of `STA` to get active inputs
 
 - [ ] design a control server that keeps track of the system state
-- [ ] support swapping A and B with one command
+  - [ ] support swapping A and B with one command
+  - [ ] rate limit request sending and ensure responses are handled cleanly -- when I ran `get_responses.sh` without `sleep` commands, the commands' output wasn't properly captured. (e.g. some output files were empty, while other output files contained responses from multiple commands)
 
 ## Possible `MultiviewerControl` class format
 

@@ -94,13 +94,21 @@ Sample output of `H` (help) command listing all commands: (Extra newlines omitte
 ----------
 ```
 
-### Sample command output
+### Command outputs
+
+- The characters sent to the HDMI matrix are echoed back, so each response starts with the command passed followed by CRLF. 
+- For the `STA` and `H` commands, we get a series of lines starting with `--` displaying status or help information, respectively. Other commands (which I call "basic commands") only return the line of output described below.
+- For all commands _except_ `H`, the response ends with a line of form `<s>{COMMAND}</s><user>{description}</user>`. 
+  - `COMMAND` is the command we sent to the matrix with all letters in uppercase (even if we sent them in lowercase), unless the command we sent was invalid, in which case this value is a single question mark.
+  - `description` is a human-readable description of what the command did.
+  - See the "Basic commands" heading below for examples.
+
+#### Status command
 
 Sample output of the `STA` (status) command: (Extra newlines omitted for brevity.)
 
 ```
 STA
-
 -------------------------------------------------------------------------
 --                           Systems STATUS                            --
 -------------------------------------------------------------------------
@@ -126,20 +134,41 @@ STA
 <s>STA</s><user>Show Global System Status</user>
 ```
 
-Output of `spobsi04` (set output B to input 4):
+#### Basic commands
+
+##### Set output B to input 1
 
 ```
 spoBsi01
-
 <s>SPOBSI01</s><user>Set Output B to Video Input 01</user>
-
 ```
 
-Output of `sbobsi01` (set output B to input 1):
+##### Set output B to input 4
 
 ```
 spobsi04
-
 <s>SPOBSI04</s><user>Set Output B to Video Input 04</user>
+```
 
+##### Two picture left/right mode
+
+```
+spoa2plr14
+<s>SPOA2PLR14</s><user>Set Output A to two Video Input Left 1/right 4 mode</user>
+```
+
+##### 2x2 mode
+
+```
+spoa2x21
+<s>SPOA2X21</s><user>Set Output A to Four Video Input 2x2 mode 1</user>
+```
+
+##### Unknown command response
+
+Here, `foo` is a command that the HDMI Matrix doesn't support. The `<s>` tag contains just a question mark, while the user-friendly description in `<user>` is "Unknow \[sic\] command". (Yes, "unknown" is misspelled in the actual `response`.)
+
+```
+foo
+<s>?</s><user>Unknow command</user>
 ```
