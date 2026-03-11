@@ -1,0 +1,24 @@
+sta
+-------------------------------------------------------------------------
+--                           Systems STATUS                            --
+-------------------------------------------------------------------------
+-- 4PET0402QMS,                        Device Name: 4PET0402QMS_0001   --
+--  F/W Version: 1.00                                                  --
+-- Power : ON                                                          --
+-- Front Panel Button : Enabled                                        --
+-- RS232 : Baud Rate=57600bps, Data=8bit, Parity=None, Stop=1bit       --
+--                                                                     --
+-- Video Input 01 :  LINK = ON                                         --
+-- Video Input 02 :  LINK = OFF                                        --
+-- Video Input 03 :  LINK = OFF                                        --
+-- Video Input 04 :  LINK = ON                                         --
+--                                                                     --
+-- Video Output: Output  = ON , DBG = ON                               --
+-- Output A Video Mode: PIP 1 4 , RES = 1080p                          --
+-- Output B Video Mode: Input1 , RES = 1920x1080p, COPY OUTA MODE = OFF--
+--                                                                     --
+-- Audio Output : Enabled                                              --
+-- Audio Mode : 2.1CH                                                  --
+-- Audio Input Channel : Input 1                                       --
+-------------------------------------------------------------------------
+<s>STA</s><user>Show Global System Status</user>
