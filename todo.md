@@ -2,11 +2,13 @@
 
 - [x] write a script that takes a raw command as its command line argument and emits the response -- e.g. `main.py sta`, `main.py h`, `main.py spobsi04`
 
-- [ ] implement a `MultiviewerControl` class that generates and sends commands
+- [x] implement a `MultiviewerControl` class that generates and sends commands
 
-- [ ] parse output of `STA` to get active inputs
+- [ ] instead of sleeping a fixed amount of time, just read until the end of the response
 
-- [ ] design a control server that keeps track of the system state
+- [x] parse output of `STA` to get active inputs
+
+- [x] design a control server that keeps track of the system state
   - [ ] support swapping A and B with one command
   - [ ] rate limit request sending and ensure responses are handled cleanly -- when I ran `get_responses.sh` without `sleep` commands, the commands' output wasn't properly captured. (e.g. some output files were empty, while other output files contained responses from multiple commands)
 
