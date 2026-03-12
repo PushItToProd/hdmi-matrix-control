@@ -8,6 +8,7 @@ Protocol notes:
 - Commands are not case-sensitive
 """
 
+import threading
 import time
 
 import serial
@@ -64,6 +65,7 @@ class HDMIMatrix:
             stopbits=serial.STOPBITS_ONE,
             timeout=timeout,
         )
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Context manager support
@@ -88,19 +90,23 @@ class HDMIMatrix:
         """
         Send a command string (carriage return appended automatically) and
         return the decoded response.
+
+        Thread-safe: Uses a lock to ensure only one command is sent at a time,
+        preventing concurrent writes to the serial port.
         """
-        self._serial.reset_input_buffer()
-        self._serial.write(f'{command}\r'.encode('ascii'))
-        time.sleep(self._read_delay)
+        with self._lock:
+            self._serial.reset_input_buffer()
+            self._serial.write(f'{command}\r'.encode('ascii'))
+            time.sleep(self._read_delay)
 
-        response = b''
-        while True:
-            chunk = self._serial.read_until(b'\r\n')
-            response += chunk
-            if self._serial.in_waiting == 0:
-                break
+            response = b''
+            while True:
+                chunk = self._serial.read_until(b'\r\n')
+                response += chunk
+                if self._serial.in_waiting == 0:
+                    break
 
-        return response.decode('ascii', errors='replace')
+            return response.decode('ascii', errors='replace')
 
     @classmethod
     def _validate_output(cls, output: str):
