@@ -1,99 +1,131 @@
 """
-Flask service for controlling the HDMI matrix via HTTP API.
+FastAPI service for controlling the HDMI matrix via HTTP API.
 """
 import time
 import logging
+from typing import Literal
 
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
+import uvicorn
 
 from hdmi_matrix import HDMIMatrix
 
-app = Flask(__name__)
-
+# Configure logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Global matrix instance (can be enhanced to support multiple connections)
-matrix = None
+_matrix: HDMIMatrix | None = None
+
+
+class SetOutputInputRequest(BaseModel):
+    """Request model for setting output to input."""
+    output: str  # "A" or "B"
+    input: int | str  # 1, 2, 3, 4 (or "U"/"D" to step up/down)
+
+
+class SuccessResponse(BaseModel):
+    """Success response model."""
+    status: str
+    response: str
+
+
+class ErrorResponse(BaseModel):
+    """Error response model."""
+    error: str
+
+
+class HealthResponse(BaseModel):
+    """Health check response model."""
+    status: str
+
+
+app = FastAPI(
+    title="HDMI Matrix Control API",
+    description="API for controlling the PORTTA 4x2 HDMI matrix switch",
+    version="0.1.0"
+)
 
 
 def get_matrix() -> HDMIMatrix:
-    """Get or create the global matrix connection."""
-    global matrix
-    if matrix is None:
-        raise RuntimeError("Matrix not initialized. Call /init first.")
-    return matrix
+    """Dependency for getting the matrix connection."""
+    global _matrix
+    if _matrix is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Matrix not initialized"
+        )
+    return _matrix
 
 
-@app.before_request
-def initialize_matrix():
-    """Initialize the matrix connection on first request."""
-    global matrix
-    if matrix is None:
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the matrix connection on startup."""
+    global _matrix
+    try:
+        _matrix = HDMIMatrix()
+        logger.info("Matrix connection initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize matrix: {str(e)}")
+        raise
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close the matrix connection on shutdown."""
+    global _matrix
+    if _matrix is not None:
         try:
-            matrix = HDMIMatrix()
+            _matrix.close()
+            logger.info("Matrix connection closed")
         except Exception as e:
-            return jsonify({"error": f"Failed to initialize matrix: {str(e)}"}), 500
+            logger.error(f"Error closing matrix connection: {str(e)}")
 
 
-@app.route('/set-output-input', methods=['POST'])
-def set_output_input():
+@app.post('/set-output-input', response_model=SuccessResponse)
+async def set_output_input(
+    request: SetOutputInputRequest,
+    matrix: HDMIMatrix = Depends(get_matrix)
+) -> SuccessResponse:
     """
     Set a video output to a single input.
 
-    Request JSON:
-        {
-            "output": "A" or "B",
-            "input": 1, 2, 3, or 4 (or "U"/"D" to step up/down)
-        }
+    **Request:**
+    - `output`: "A" or "B"
+    - `input`: 1, 2, 3, or 4 (or "U"/"D" to step up/down)
 
-    Response:
-        {"status": "success", "response": "device response"}
-        or
-        {"error": "error message"} (400 or 500)
+    **Response:**
+    - `status`: "success"
+    - `response`: device response string
     """
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Request body must be JSON"}), 400
-
-        output = data.get('output')
-        inp = data.get('input')
-
-        if output is None or inp is None:
-            return jsonify({"error": "Missing required fields: 'output' and 'input'"}), 400
-
-        app.logger.info(f"Received request to set output {output} to input {inp}")
+        logger.info(f"Received request to set output {request.output} to input {request.input}")
 
         start_time = time.perf_counter()
-        matrix = get_matrix()
-        response = matrix.set_output_input(output, inp)
+        response = matrix.set_output_input(request.output, request.input)
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
 
-        app.logger.info(f"Set output {output} to input {inp} (Elapsed time: {elapsed_time:.3f} seconds)")
+        logger.info(f"Set output {request.output} to input {request.input} (Elapsed time: {elapsed_time:.3f} seconds)")
 
-        return jsonify({"status": "success", "response": response}), 200
+        return SuccessResponse(status="success", response=response)
 
     except ValueError as e:
         # Validation error from HDMIMatrix
-        return jsonify({"error": str(e)}), 400
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         # Other errors (serial port, etc.)
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error setting output: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/health', methods=['GET'])
-def health():
+@app.get('/health', response_model=HealthResponse)
+async def health() -> HealthResponse:
     """Health check endpoint."""
-    return jsonify({"status": "ok"}), 200
-
-
-@app.errorhandler(404)
-def not_found(error):
-    """Handle 404 errors."""
-    return jsonify({"error": "Endpoint not found"}), 404
+    return HealthResponse(status="ok")
 
 
 if __name__ == '__main__':
-    # Run the Flask app on localhost:5000
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Run the FastAPI app with uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=5000)

@@ -5,7 +5,8 @@ description = "Utility for controlling PORTTA 4x2 multiviewer via its USB CDC RS
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "flask>=3.1.3",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
     "pyserial>=3.5",
 ]
 license = "0BSD"
