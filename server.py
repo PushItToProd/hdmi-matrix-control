@@ -1,12 +1,16 @@
 """
 Flask service for controlling the HDMI matrix via HTTP API.
 """
+import time
+import logging
 
 from flask import Flask, request, jsonify
 
 from hdmi_matrix import HDMIMatrix
 
 app = Flask(__name__)
+
+logging.basicConfig(level=logging.INFO)
 
 # Global matrix instance (can be enhanced to support multiple connections)
 matrix = None
@@ -58,8 +62,15 @@ def set_output_input():
         if output is None or inp is None:
             return jsonify({"error": "Missing required fields: 'output' and 'input'"}), 400
 
+        app.logger.info(f"Received request to set output {output} to input {inp}")
+
+        start_time = time.perf_counter()
         matrix = get_matrix()
         response = matrix.set_output_input(output, inp)
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+
+        app.logger.info(f"Set output {output} to input {inp} (Elapsed time: {elapsed_time:.3f} seconds)")
 
         return jsonify({"status": "success", "response": response}), 200
 
