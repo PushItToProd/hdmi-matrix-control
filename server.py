@@ -84,7 +84,7 @@ def get_matrix() -> HDMIMatrix:
 
 
 @app.post('/set-output-input', response_model=SuccessResponse)
-async def set_output_input(
+def set_output_input(
     request: SetOutputInputRequest,
     matrix: HDMIMatrix = Depends(get_matrix)
 ) -> SuccessResponse:
