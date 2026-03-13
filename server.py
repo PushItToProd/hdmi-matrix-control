@@ -3,7 +3,7 @@ FastAPI service for controlling the HDMI matrix via HTTP API.
 """
 import time
 import logging
-from typing import Literal
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
@@ -41,10 +41,34 @@ class HealthResponse(BaseModel):
     status: str
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage the lifespan of the FastAPI application."""
+    # Startup
+    global _matrix
+    try:
+        _matrix = HDMIMatrix()
+        logger.info("Matrix connection initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize matrix: {str(e)}")
+        raise
+
+    yield
+
+    # Shutdown
+    if _matrix is not None:
+        try:
+            _matrix.close()
+            logger.info("Matrix connection closed")
+        except Exception as e:
+            logger.error(f"Error closing matrix connection: {str(e)}")
+
+
 app = FastAPI(
     title="HDMI Matrix Control API",
     description="API for controlling the PORTTA 4x2 HDMI matrix switch",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 
@@ -57,30 +81,6 @@ def get_matrix() -> HDMIMatrix:
             detail="Matrix not initialized"
         )
     return _matrix
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the matrix connection on startup."""
-    global _matrix
-    try:
-        _matrix = HDMIMatrix()
-        logger.info("Matrix connection initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize matrix: {str(e)}")
-        raise
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Close the matrix connection on shutdown."""
-    global _matrix
-    if _matrix is not None:
-        try:
-            _matrix.close()
-            logger.info("Matrix connection closed")
-        except Exception as e:
-            logger.error(f"Error closing matrix connection: {str(e)}")
 
 
 @app.post('/set-output-input', response_model=SuccessResponse)
