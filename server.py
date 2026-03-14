@@ -86,7 +86,8 @@ def get_matrix() -> HDMIMatrix:
 @app.post('/set-output-input', response_model=SuccessResponse)
 def set_output_input(
     request: SetOutputInputRequest,
-    matrix: HDMIMatrix = Depends(get_matrix)
+    matrix: HDMIMatrix = Depends(get_matrix),
+    quick: bool = True,
 ) -> SuccessResponse:
     """
     Set a video output to a single input.
@@ -103,16 +104,20 @@ def set_output_input(
         logger.info(f"Received request to set output {request.output} to input {request.input}")
 
         start_time = time.perf_counter()
-        response = matrix.set_output_input(request.output, request.input)
+        response = matrix.set_output_input(request.output, request.input, quick=quick)
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
 
         logger.info(f"Set output {request.output} to input {request.input} (Elapsed time: {elapsed_time:.3f} seconds)")
 
+        if response is None and quick:
+            response = "(unknown)"
+
         return SuccessResponse(status="success", response=response)
 
     except ValueError as e:
         # Validation error from HDMIMatrix
+        logger.error(f"Validation error from request: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         # Other errors (serial port, etc.)

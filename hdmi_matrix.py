@@ -10,6 +10,7 @@ Protocol notes:
 
 import threading
 import time
+from typing import overload, Literal
 
 import serial
 
@@ -86,7 +87,16 @@ class HDMIMatrix:
     # Low-level communication
     # ------------------------------------------------------------------
 
-    def _send(self, command: str) -> str:
+    @overload
+    def _send(self, command: str) -> str: ...
+
+    @overload
+    def _send(self, command: str, quick: Literal[False]) -> str: ...
+
+    @overload
+    def _send(self, command: str, quick: Literal[True]) -> None: ...
+
+    def _send(self, command: str, quick=False) -> str | None:
         """
         Send a command string (carriage return appended automatically) and
         return the decoded response.
@@ -98,6 +108,9 @@ class HDMIMatrix:
             self._serial.reset_input_buffer()
             self._serial.write(f'{command}\r'.encode('ascii'))
             time.sleep(self._read_delay)
+
+            if quick:
+                return None
 
             response = b''
             while True:
@@ -164,7 +177,7 @@ class HDMIMatrix:
     # Video output setup
     # ------------------------------------------------------------------
 
-    def set_output_input(self, output: str, inp) -> str:
+    def set_output_input(self, output: str, inp, quick=False) -> str | None:
         """
         Route a video input to a single output.
 
@@ -174,7 +187,7 @@ class HDMIMatrix:
         """
         output = self._validate_output(output)
         inp = self._validate_input(inp)
-        return self._send(f'SPO{output}SI{inp}')
+        return self._send(f'SPO{output}SI{inp}', quick=quick)
 
     def set_all_outputs_input(self, inp) -> str:
         """
