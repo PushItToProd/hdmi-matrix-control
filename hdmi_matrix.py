@@ -40,6 +40,13 @@ class HDMIMatrix:
     VALID_BAUD_CODES = {0: 57600, 1: 38400, 2: 19200, 3: 9600, 4: 4800}
     VALID_PIP_CORNERS = ('RD', 'LD', 'LU', 'RU')  # for reference only
 
+    # Every reply ends with the command-info line "<s>CMD</s><user>...</user>"
+    # followed by a bare carriage return and no line feed (see protocol.md and
+    # test_fixtures/responses). Reading to this marker ends the read the moment
+    # the reply is complete; waiting for CRLF instead would block for the full
+    # serial timeout on every command, which made STA take over a second.
+    RESPONSE_TERMINATOR = b'</user>\r'
+
     def __init__(
         self,
         port: str = '/dev/ttyACM0',
@@ -53,9 +60,11 @@ class HDMIMatrix:
         Args:
             port:        Serial port, e.g. '/dev/ttyACM0' or 'COM3'.
             baudrate:    Must match the device's configured baud rate (default 57600).
-            timeout:     Read timeout in seconds.
-            read_delay:  Seconds to wait after sending a command before reading the
-                         response. Increase if responses are being truncated.
+            timeout:     Read timeout in seconds; bounds a read whose reply never
+                         carries the terminator (H, SPOBCOPYOUTAOFF).
+            read_delay:  Seconds a quick (fire-and-forget) command keeps the port
+                         after writing, so the device's reply has fully arrived
+                         and the next command's input-buffer reset discards it.
         """
         self._read_delay = read_delay
         self._serial = serial.Serial(
@@ -102,23 +111,20 @@ class HDMIMatrix:
         return the decoded response.
 
         Thread-safe: Uses a lock to ensure only one command is sent at a time,
-        preventing concurrent writes to the serial port.
+        preventing concurrent writes to the serial port. The lock is held for
+        as short a time as possible because every caller shares one serial
+        port: a status poll that lingers here delays every switch command
+        queued behind it.
         """
         with self._lock:
             self._serial.reset_input_buffer()
             self._serial.write(f'{command}\r'.encode('ascii'))
-            time.sleep(self._read_delay)
 
             if quick:
+                time.sleep(self._read_delay)
                 return None
 
-            response = b''
-            while True:
-                chunk = self._serial.read_until(b'\r\n')
-                response += chunk
-                if self._serial.in_waiting == 0:
-                    break
-
+            response = self._serial.read_until(self.RESPONSE_TERMINATOR)
             return response.decode('ascii', errors='replace')
 
     @classmethod

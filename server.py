@@ -220,7 +220,9 @@ def get_status(matrix: HDMIMatrix = Depends(get_matrix)) -> dict:
     `{"error": "..."}` if the serial read fails or the status cannot be parsed.
     """
     try:
+        start_time = time.perf_counter()
         status = matrix.get_status()
+        logger.debug(f"Read matrix status (Elapsed time: {time.perf_counter() - start_time:.3f} seconds)")
     except ValueError as e:
         logger.error(f"Could not parse matrix status: {str(e)}")
         return JSONResponse(status_code=503, content={"error": f"status parse failed: {str(e)}"})
