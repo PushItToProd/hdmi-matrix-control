@@ -19,5 +19,6 @@ build-backend = "setuptools.build_meta"
 py-modules = [
     "server",
     "hdmi_matrix",
-    "hdmi_matrix_status"
+    "hdmi_matrix_status",
+    "status_cache"
 ]

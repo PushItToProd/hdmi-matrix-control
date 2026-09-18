@@ -11,6 +11,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from hdmi_matrix import HDMIMatrix
+from status_cache import StatusCache
 from hdmi_matrix_status import (
     HDMIMatrixStatus,
     OneBigThreeSmallMode,
@@ -28,6 +29,13 @@ logger = logging.getLogger(__name__)
 
 # Global matrix instance (can be enhanced to support multiple connections)
 _matrix: HDMIMatrix | None = None
+
+# How long a status reading may be reused. Short enough that a client polling
+# every few seconds still sees the device itself, long enough that several
+# clients polling together cost one STA rather than one each.
+STATUS_CACHE_TTL = 1.0
+
+_status_cache: StatusCache[HDMIMatrixStatus] | None = None
 
 
 class SetOutputInputRequest(BaseModel):
@@ -131,13 +139,15 @@ class HealthResponse(BaseModel):
 async def lifespan(app: FastAPI):
     """Manage the lifespan of the FastAPI application."""
     # Startup
-    global _matrix
+    global _matrix, _status_cache
     try:
-        _matrix = HDMIMatrix()
-        logger.info("Matrix connection initialized successfully")
+        matrix = HDMIMatrix()
     except Exception as e:
         logger.error(f"Failed to initialize matrix: {str(e)}")
         raise
+    _matrix = matrix
+    _status_cache = StatusCache(matrix.get_status, ttl=STATUS_CACHE_TTL)
+    logger.info("Matrix connection initialized successfully")
 
     yield
 
@@ -169,10 +179,22 @@ def get_matrix() -> HDMIMatrix:
     return _matrix
 
 
+def get_status_cache() -> StatusCache[HDMIMatrixStatus]:
+    """Dependency for getting the status cache."""
+    global _status_cache
+    if _status_cache is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Matrix not initialized"
+        )
+    return _status_cache
+
+
 @app.post('/set-output-input', response_model=SuccessResponse)
 def set_output_input(
     request: SetOutputInputRequest,
     matrix: HDMIMatrix = Depends(get_matrix),
+    cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache),
     quick: bool = True,
 ) -> SuccessResponse:
     """
@@ -191,6 +213,7 @@ def set_output_input(
 
         start_time = time.perf_counter()
         response = matrix.set_output_input(request.output, request.input, quick=quick)
+        cache.invalidate()
         end_time = time.perf_counter()
         elapsed_time = end_time - start_time
 
@@ -212,16 +235,19 @@ def set_output_input(
 
 
 @app.get('/status', responses={503: {"model": ErrorResponse}})
-def get_status(matrix: HDMIMatrix = Depends(get_matrix)) -> dict:
+def get_status(cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache)) -> dict:
     """
-    Read the device's full status (STA) and return the routing state.
+    Read the device's status (STA) and return the routing state.
 
-    Every call hits the device; nothing is cached. Returns 503 with
-    `{"error": "..."}` if the serial read fails or the status cannot be parsed.
+    Readings are cached for `STATUS_CACHE_TTL`, and callers arriving during a
+    read share its result, so several polling clients cost the serial port no
+    more than one. A command invalidates the cache, so the reading after a
+    switch always comes from the device. Returns 503 with `{"error": "..."}`
+    if the serial read fails or the status cannot be parsed.
     """
     try:
         start_time = time.perf_counter()
-        status = matrix.get_status()
+        status = cache.get()
         logger.debug(f"Read matrix status (Elapsed time: {time.perf_counter() - start_time:.3f} seconds)")
     except ValueError as e:
         logger.error(f"Could not parse matrix status: {str(e)}")
@@ -236,6 +262,7 @@ def get_status(matrix: HDMIMatrix = Depends(get_matrix)) -> dict:
 def set_output_a_mode(
     request: SetOutputAModeRequest,
     matrix: HDMIMatrix = Depends(get_matrix),
+    cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache),
 ) -> SuccessResponse:
     """
     Set output A's video mode. The body has the same shape as output A in
@@ -277,6 +304,7 @@ def set_output_a_mode(
                 response = matrix.set_output_a_pip(given["main"], given["small"])
             case _:
                 raise HTTPException(status_code=400, detail=f"unknown mode {mode!r}")
+        cache.invalidate()
         elapsed_time = time.perf_counter() - start_time
         logger.info(f"Set output A mode to {mode} (Elapsed time: {elapsed_time:.3f} seconds)")
         return SuccessResponse(status="success", response=response or "")
