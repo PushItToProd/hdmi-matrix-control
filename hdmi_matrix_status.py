@@ -96,8 +96,10 @@ class OutputAStatus:
 
 @dataclass
 class OutputBStatus:
-    input: int        # 1-4; 0 when copying A in a multi-picture mode (no single input)
-    resolution: str   # e.g. "1920x1080p"
+    input: int        # 1-4; 0 when the device reports no single input: copying A
+                      # in a multi-picture mode, or "no display" because the
+                      # selected input has no signal
+    resolution: str   # e.g. "1920x1080p"; "N/A" when there is no display
     copy_outa: bool   # True when COPY OUTA MODE = ON
 
 
@@ -258,15 +260,21 @@ def parse_status(raw: str) -> HDMIMatrixStatus:
 
     # -- Output A ----------------------------------------------------------
     # "Output A Video Mode: PIP 1 4 , RES = 1080p"
-    oa_m = _find(r'Output A Video Mode:\s*(.+?)\s*,\s*RES\s*=\s*(\S+)')
+    # The resolution is informational only, so accept any text (including
+    # none) rather than fail the whole status over an unexpected value.
+    oa_m = _find(r'Output A Video Mode:\s*(.+?)\s*,\s*RES\s*=[ \t]*(.*?)[ \t]*$', re.MULTILINE)
     output_a = _parse_output_a(oa_m.group(1).strip(), oa_m.group(2))
 
     # -- Output B ----------------------------------------------------------
     # "Output B Video Mode: Input1 , RES = 1920x1080p, COPY OUTA MODE = OFF"
     # When B copies A, the device reports A's layout here instead, e.g.
     # "Output B Video Mode: PIP 1 4 , RES = 1080p , COPY OUTA MODE = ON".
+    # When B's selected input has no signal the device rewrites the whole
+    # line, dropping the input number and renaming the copy field:
+    # "Output B Video Mode: no display, RES = N/A,  Copy OutputA Mode = OFF".
     ob_m = _find(
-        r'Output B Video Mode:\s*(.+?)\s*,\s*RES\s*=\s*(\S+)\s*,\s*COPY OUTA MODE\s*=\s*(\w+)'
+        r'Output B Video Mode:\s*(.+?)\s*,\s*RES\s*=\s*(.*?)\s*,\s*Copy\s+Out(?:A|putA)\s+Mode\s*=\s*(\w+)',
+        re.IGNORECASE,
     )
     ob_mode = ob_m.group(1).strip()
     ob_input = int(ob_mode[len('Input'):]) if ob_mode.startswith('Input') else 0

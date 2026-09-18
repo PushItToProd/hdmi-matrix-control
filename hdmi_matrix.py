@@ -8,6 +8,7 @@ Protocol notes:
 - Commands are not case-sensitive
 """
 
+import logging
 import threading
 import time
 from typing import overload, Literal
@@ -15,6 +16,8 @@ from typing import overload, Literal
 import serial
 
 from hdmi_matrix_status import parse_status, HDMIMatrixStatus
+
+logger = logging.getLogger(__name__)
 
 
 class HDMIMatrix:
@@ -177,7 +180,13 @@ class HDMIMatrix:
     def get_status(self) -> HDMIMatrixStatus:
         """Return the global system status as a dataclass."""
         raw_status = self._get_status_str()
-        return parse_status(raw_status)
+        try:
+            return parse_status(raw_status)
+        except ValueError:
+            # The device rewords status lines in states nobody has recorded
+            # yet; the raw text is the only way to see what it actually said.
+            logger.error("Unparseable STA output:\n%s", raw_status)
+            raise
 
     # ------------------------------------------------------------------
     # Video output setup
