@@ -96,7 +96,7 @@ class OutputAStatus:
 
 @dataclass
 class OutputBStatus:
-    input: int        # 1-4
+    input: int        # 1-4; 0 when copying A in a multi-picture mode (no single input)
     resolution: str   # e.g. "1920x1080p"
     copy_outa: bool   # True when COPY OUTA MODE = ON
 
@@ -263,11 +263,15 @@ def parse_status(raw: str) -> HDMIMatrixStatus:
 
     # -- Output B ----------------------------------------------------------
     # "Output B Video Mode: Input1 , RES = 1920x1080p, COPY OUTA MODE = OFF"
+    # When B copies A, the device reports A's layout here instead, e.g.
+    # "Output B Video Mode: PIP 1 4 , RES = 1080p , COPY OUTA MODE = ON".
     ob_m = _find(
-        r'Output B Video Mode:\s*Input(\d+)\s*,\s*RES\s*=\s*(\S+),\s*COPY OUTA MODE\s*=\s*(\w+)'
+        r'Output B Video Mode:\s*(.+?)\s*,\s*RES\s*=\s*(\S+)\s*,\s*COPY OUTA MODE\s*=\s*(\w+)'
     )
+    ob_mode = ob_m.group(1).strip()
+    ob_input = int(ob_mode[len('Input'):]) if ob_mode.startswith('Input') else 0
     output_b = OutputBStatus(
-        input      = int(ob_m.group(1)),
+        input      = ob_input,
         resolution = ob_m.group(2),
         copy_outa  = ob_m.group(3).upper() == 'ON',
     )
