@@ -71,7 +71,8 @@ def matrix_with(serial: FakeSerial) -> HDMIMatrix:
     matrix = HDMIMatrix.__new__(HDMIMatrix)
     matrix._serial = serial
     matrix._lock = threading.Lock()
-    matrix._read_delay = 0.1
+    matrix._command_gap = 0.1
+    matrix._next_write_at = 0.0
     return matrix
 
 

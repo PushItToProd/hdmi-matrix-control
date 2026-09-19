@@ -35,13 +35,9 @@ class StubMatrix:
         raw = (FIXTURES / f"{self.fixture}_status.bin").read_bytes().decode()
         return parse_status(raw)
 
-    def set_output_input(self, output, inp, quick=False):
-        self.commands.append(("set_output_input", output, inp))
-        return None if quick else "ok"
-
-    def set_output_a_pip(self, main, small):
-        self.commands.append(("set_output_a_pip", main, small))
-        return "ok"
+    def send_commands(self, commands):
+        self.commands.append(tuple(commands))
+        return 'ok'
 
     def send_raw(self, commands, gap=0.1, read_seconds=1.5, reset_input=True):
         self.commands.append(("send_raw", tuple(commands), gap, read_seconds, reset_input))
@@ -76,7 +72,10 @@ def test_status_reports_the_device_routing(client, matrix):
 def test_repeated_status_requests_cost_one_device_read(client, matrix):
     first = client.get("/status").json()
     second = client.get("/status").json()
-    assert first == second
+    assert first["outputs"] == second["outputs"]
+    assert first["observed_at"] == second["observed_at"]
+    assert first["version"] == second["version"]
+    assert second["age_ms"] >= first["age_ms"]
     assert matrix.status_reads == 1
 
 
@@ -86,7 +85,7 @@ def test_switching_an_output_invalidates_the_cached_status(client, matrix):
 
     resp = client.post("/set-output-input", json={"output": "B", "input": 4})
     assert resp.status_code == 200
-    assert matrix.commands == [("set_output_input", "B", 4)]
+    assert matrix.commands == [("SPOBSI04",)]
 
     client.get("/status")
     assert matrix.status_reads == 2
@@ -96,7 +95,7 @@ def test_setting_output_a_mode_invalidates_the_cached_status(client, matrix):
     client.get("/status")
     resp = client.post("/set-output-a-mode", json={"mode": "pip", "main": 1, "small": 4})
     assert resp.status_code == 200
-    assert matrix.commands == [("set_output_a_pip", 1, 4)]
+    assert matrix.commands == [("SPOAPIP14",)]
 
     client.get("/status")
     assert matrix.status_reads == 2
@@ -178,3 +177,72 @@ def test_raw_capture_refuses_to_hold_the_port_too_long(client, matrix, raw_enabl
     response = client.post("/debug/raw-command", json={"commands": ["sta"], "read_seconds": 60})
     assert response.status_code == 400
     assert matrix.commands == []
+
+
+@pytest.mark.parametrize('body, commands', [
+    ({'A': 2, 'B': 4}, ('SPOASI02', 'SPOBSI04')),
+    ({'A': {'mode': 'single', 'input': 2}, 'B': {'input': 4}}, ('SPOASI02', 'SPOBSI04')),
+    ({'A': {'mode': '2x2', 'combination': 1}}, ('SPOA2X21',)),
+    ({'A': {'mode': '1b3s', 'combination': 2}}, ('SPOA1B3S2',)),
+    ({'A': {'mode': '2plr', 'left': 1, 'right': 4}, 'B': 1}, ('SPOA2PLR14', 'SPOBSI01')),
+    ({'A': {'mode': '2pud', 'top': 1, 'bottom': 4}}, ('SPOA2PUD14',)),
+    ({'A': {'mode': 'pip', 'main': 1, 'small': 4}}, ('SPOAPIP14',)),
+    ({'B': 1}, ('SPOBSI01',)),
+])
+def test_apply_normalizes_routes_into_one_batch(client, matrix, body, commands):
+    before = client.get('/status').json()
+    response = client.post('/apply', json=body)
+    assert response.status_code == 200, response.text
+    assert matrix.commands == [commands]
+    after = client.get('/status').json()
+    assert matrix.status_reads == 2
+    assert after['version'] > before['version']
+
+
+@pytest.mark.parametrize('body', [
+    {}, {'A': None}, {'A': 0}, {'A': 5}, {'B': 0}, {'B': 5},
+    {'A': True}, {'B': True}, {'A': '2'}, {'B': 1.5},
+    {'A': {'mode': 'pip', 'main': 1}},
+    {'A': {'mode': 'single', 'input': 1, 'left': 2}},
+    {'A': {'mode': 'single', 'input': True}},
+    {'A': 1, 'B': {'input': 4, 'copy_a': True}},
+    {'A': 1, 'B': {'input': 4, 'copy_a': False}},
+    {'A': 1, 'extra': 4}, {'A': 1, 'if_version': -1},
+])
+def test_invalid_apply_never_partially_writes(client, matrix, body):
+    before = client.get('/status').json()
+    assert client.post('/apply', json=body).status_code in (400, 422)
+    assert matrix.commands == []
+    assert client.get('/status').json()['version'] == before['version']
+    assert matrix.status_reads == 1
+
+
+def test_apply_version_conflict_sends_nothing(client, matrix):
+    before = client.get('/status').json()
+    body = {'A': 2, 'B': 4, 'if_version': before['version']}
+    assert client.post('/apply', json=body).status_code == 200
+    assert client.post('/apply', json=body).status_code == 409
+    assert len(matrix.commands) == 1
+
+
+@pytest.mark.parametrize('exception, code', [
+    (server.CommandTimeout('missing B'), 504),
+    (server.CommandRejected('unknown command'), 502),
+    (OSError('port lost'), 500),
+])
+def test_uncertain_command_invalidates_cached_state(client, matrix, exception, code):
+    before = client.get('/status').json()
+    def fail(commands):
+        raise exception
+    matrix.send_commands = fail
+    assert client.post('/apply', json={'B': 4}).status_code == code
+    after = client.get('/status').json()
+    assert after['version'] > before['version']
+    assert matrix.status_reads == 2
+
+
+def test_legacy_quick_query_is_ignored_and_reply_is_drained(client, matrix):
+    response = client.post('/set-output-input?quick=true', json={'output': 'B', 'input': 4})
+    assert response.status_code == 200
+    assert response.json()['response'] == 'ok'
+    assert matrix.commands == [('SPOBSI04',)]

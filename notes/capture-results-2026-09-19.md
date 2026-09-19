@@ -1,6 +1,6 @@
 # Device capture results — 2026-09-19
 
-Ran all five groups in `capture-plan.md`, plus repeated linked-input swaps
+Ran all five groups in the original capture plan, plus repeated linked-input swaps
 and 100 ms status queries to check the unexpected results. No application
 implementation was changed. The automated suite passed: **48 tests**, with
 two dependency deprecation warnings, under Python 3.14.2.
@@ -8,7 +8,7 @@ two dependency deprecation warnings, under Python 3.14.2.
 ## Evidence and environment
 
 Raw event JSON, lossless concatenated `.bin` replies, before/after status,
-and the scripts used are in [the capture directory](test_fixtures/captures/2026-09-19/).
+and the scripts used are in [the capture directory](../test_fixtures/captures/2026-09-19/).
 JSON preserves command-write timestamps, burst-start timestamps, and Base64
 bytes; binary files alone do not preserve timing. Every binary file was
 checked against its JSON, and every requested command had its expected echo.
@@ -125,5 +125,5 @@ PYTHONDONTWRITEBYTECODE=1 UV_CACHE_DIR=/tmp/portta-test-uv-cache \
 ```
 
 The warnings concern Starlette's deprecated httpx TestClient integration and
-AnyIO BlockingPortal alias. `capture-plan.md` remains because `/apply` has
-not yet been implemented.
+AnyIO BlockingPortal alias. The capture plan was subsequently completed and
+removed; see [the implementation and rollout notes](apply.md).

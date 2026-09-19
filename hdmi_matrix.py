@@ -4,20 +4,30 @@ Encapsulates the RS232 protocol for a 4PET0402QMS 4x2 HDMI matrix switch.
 
 Protocol notes:
 - Commands are sent as ASCII strings terminated with a carriage return (\\r)
-- Responses are terminated with \\r\\n
+- Most replies end with </user> followed by a bare carriage return
 - Commands are not case-sensitive
 """
 
 import logging
+import math
+import re
 import threading
 import time
-from typing import overload, Literal
+from collections import Counter
 
 import serial
 
 from hdmi_matrix_status import parse_status, HDMIMatrixStatus
 
 logger = logging.getLogger(__name__)
+
+
+class CommandTimeout(TimeoutError):
+    """Some commands may have applied, but their complete replies are missing."""
+
+
+class CommandRejected(RuntimeError):
+    """The device returned its unknown-command marker."""
 
 
 class HDMIMatrix:
@@ -43,7 +53,7 @@ class HDMIMatrix:
     VALID_BAUD_CODES = {0: 57600, 1: 38400, 2: 19200, 3: 9600, 4: 4800}
     VALID_PIP_CORNERS = ('RD', 'LD', 'LU', 'RU')  # for reference only
 
-    # Every reply ends with the command-info line "<s>CMD</s><user>...</user>"
+    # Most replies end with the command-info line "<s>CMD</s><user>...</user>"
     # followed by a bare carriage return and no line feed (see protocol.md and
     # test_fixtures/responses). Reading to this marker ends the read the moment
     # the reply is complete; waiting for CRLF instead would block for the full
@@ -55,7 +65,7 @@ class HDMIMatrix:
         port: str = '/dev/ttyACM0',
         baudrate: int = 57600,
         timeout: float = 1.0,
-        read_delay: float = 0.1,
+        command_gap: float = 0.1,
     ):
         """
         Open a serial connection to the HDMI matrix.
@@ -65,11 +75,15 @@ class HDMIMatrix:
             baudrate:    Must match the device's configured baud rate (default 57600).
             timeout:     Read timeout in seconds; bounds a read whose reply never
                          carries the terminator (H, SPOBCOPYOUTAOFF).
-            read_delay:  Seconds a quick (fire-and-forget) command keeps the port
-                         after writing, so the device's reply has fully arrived
-                         and the next command's input-buffer reset discards it.
+            command_gap: Minimum seconds between writes, including commands in
+                         separate requests and a subsequent status query.
         """
-        self._read_delay = read_delay
+        if not math.isfinite(command_gap) or command_gap < 0:
+            raise ValueError('command_gap must be finite and non-negative')
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError('timeout must be finite and positive')
+        self._command_gap = command_gap
+        self._next_write_at = 0.0
         self._serial = serial.Serial(
             port=port,
             baudrate=baudrate,
@@ -99,36 +113,66 @@ class HDMIMatrix:
     # Low-level communication
     # ------------------------------------------------------------------
 
-    @overload
-    def _send(self, command: str) -> str: ...
+    def _send(self, command: str) -> str:
+        # These commands are documented to omit their trailer (or all output).
+        # They still drain the port for the entire bounded read window.
+        return self.send_commands([command], allow_unframed=command.upper() in
+                                  ('H', 'SPOBCOPYOUTAON', 'SPOBCOPYOUTAOFF'))
 
-    @overload
-    def _send(self, command: str, quick: Literal[False]) -> str: ...
+    def _pace(self):
+        remaining = self._next_write_at - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
 
-    @overload
-    def _send(self, command: str, quick: Literal[True]) -> None: ...
+    def send_commands(self, commands: list[str], *, allow_unframed: bool = False) -> str:
+        """Write a batch under one lock, then drain every complete command echo.
 
-    def _send(self, command: str, quick=False) -> str | None:
+        The timeout is one overall read budget after the last write, not a
+        timeout per reply. Echoes only acknowledge receipt: callers must still
+        verify routing. Never retry a partially applied batch automatically.
         """
-        Send a command string (carriage return appended automatically) and
-        return the decoded response.
-
-        Thread-safe: Uses a lock to ensure only one command is sent at a time,
-        preventing concurrent writes to the serial port. The lock is held for
-        as short a time as possible because every caller shares one serial
-        port: a status poll that lingers here delays every switch command
-        queued behind it.
-        """
+        if not commands or any(not c or not c.isascii() or not c.isprintable() for c in commands):
+            raise ValueError('commands must be nonempty printable ASCII')
+        expected = Counter(c.upper().encode('ascii') for c in commands)
         with self._lock:
-            self._serial.reset_input_buffer()
-            self._serial.write(f'{command}\r'.encode('ascii'))
-
-            if quick:
-                time.sleep(self._read_delay)
-                return None
-
-            response = self._serial.read_until(self.RESPONSE_TERMINATOR)
-            return response.decode('ascii', errors='replace')
+            previous_timeout = self._serial.timeout
+            try:
+                self._pace()
+                self._serial.reset_input_buffer()
+                for command in commands:
+                    self._pace()
+                    self._serial.write(f'{command}\r'.encode('ascii'))
+                    self._next_write_at = time.monotonic() + self._command_gap
+                deadline = time.monotonic() + previous_timeout
+                response = bytearray()
+                rejected = 0
+                missing = expected.copy()
+                while (remaining := deadline - time.monotonic()) > 0:
+                    self._serial.timeout = remaining
+                    # pyserial's read_until does repeated read(1) calls with
+                    # the same timeout. A late partial reply could otherwise
+                    # start another full wait inside that call. Read only the
+                    # buffered bytes, or one blocking byte, then recompute the
+                    # remaining budget before waiting again.
+                    response.extend(self._serial.read_until(
+                        self.RESPONSE_TERMINATOR, size=max(1, self._serial.in_waiting)))
+                    # Require the whole trailer, not just </s>: leaving its
+                    # tail unread would corrupt the following transaction.
+                    echoes = Counter(re.findall(rb'<s>([^<]+)</s><user>.*?</user>\r',
+                                                response, re.DOTALL))
+                    missing = expected - echoes
+                    rejected = echoes[b'?']
+                    if sum(missing.values()) <= rejected:
+                        break
+                decoded = response.decode('ascii', errors='replace')
+                if rejected:
+                    raise CommandRejected(f'device rejected batch {commands!r}: {decoded}')
+                if missing and not allow_unframed:
+                    names = [c.decode('ascii') for c in missing.elements()]
+                    raise CommandTimeout(f'missing replies for {names!r}: {decoded}')
+                return decoded
+            finally:
+                self._serial.timeout = previous_timeout
 
     # ------------------------------------------------------------------
     # Raw capture
@@ -176,11 +220,13 @@ class HDMIMatrix:
             try:
                 if reset_input:
                     self._serial.reset_input_buffer()
+                self._pace()
                 start = time.monotonic()
                 for index, command in enumerate(commands):
                     if index:
                         self._capture_until(start, time.monotonic() + gap, settle, events)
                     self._serial.write(f'{command}\r'.encode('ascii'))
+                    self._next_write_at = time.monotonic() + self._command_gap
                     events.append({
                         'at_ms': round((time.monotonic() - start) * 1000, 1),
                         'kind': 'write',
@@ -275,7 +321,7 @@ class HDMIMatrix:
     # Video output setup
     # ------------------------------------------------------------------
 
-    def set_output_input(self, output: str, inp, quick=False) -> str | None:
+    def set_output_input(self, output: str, inp) -> str:
         """
         Route a video input to a single output.
 
@@ -285,7 +331,7 @@ class HDMIMatrix:
         """
         output = self._validate_output(output)
         inp = self._validate_input(inp)
-        return self._send(f'SPO{output}SI{inp}', quick=quick)
+        return self._send(f'SPO{output}SI{inp}')
 
     def set_all_outputs_input(self, inp) -> str:
         """

@@ -4,13 +4,13 @@
 
 - [x] implement a `MultiviewerControl` class that generates and sends commands
 
-- [ ] instead of sleeping a fixed amount of time, just read until the end of the response
+- [x] instead of sleeping a fixed amount of time, just read until the end of the response
 
 - [x] parse output of `STA` to get active inputs
 
 - [x] design a control server that keeps track of the system state
-  - [ ] support swapping A and B with one command
-  - [ ] rate limit request sending and ensure responses are handled cleanly -- when I ran `get_responses.sh` without `sleep` commands, the commands' output wasn't properly captured. (e.g. some output files were empty, while other output files contained responses from multiple commands)
+  - [x] support swapping A and B with one HTTP command (`POST /apply`)
+  - [x] pace writes and drain complete replies under one serial lock; see `notes/apply.md`
 
 ## Possible `MultiviewerControl` class format
 

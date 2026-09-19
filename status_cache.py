@@ -1,91 +1,97 @@
-"""
-Single-flight TTL cache for an expensive device read.
-
-Reading status costs a full STA reply: about 1750 bytes, or 0.3s of solid
-transmission at 57600 baud, during which the device's MCU is formatting text
-rather than tending the video path. That makes status the service's most
-expensive operation and the one clients repeat most often, so the number of
-STA reads should depend on how often the device is asked, not on how many
-clients happen to be asking. A second poller, a stray curl loop, or a future
-integration would otherwise multiply the load on the serial port.
-"""
+"""Single-flight observations and serialized, optionally conditional commands."""
 
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
-# Distinguishes "nothing cached" from a cached value that is itself falsy.
-_MISSING = object()
+
+class VersionConflict(Exception):
+    """No command was sent: the caller's observation is no longer current."""
+
+
+@dataclass(frozen=True)
+class Observation[T]:
+    value: T
+    observed_at: datetime
+    observed_monotonic: float
+    version: int
 
 
 class StatusCache[T]:
-    """
-    Caches `read`'s result for `ttl` seconds and collapses concurrent callers
-    onto a single underlying read.
+    """Collapse concurrent reads and guard version-check/write transactions.
 
-    Thread-safe: the service's endpoints are synchronous, so FastAPI runs them
-    in a thread pool and several requests can arrive here at once.
-
-    Failures are never cached. If `read` raises, the exception reaches the
-    caller and the next caller tries the device again.
+    A revision advances on changed observations and on every attempted command,
+    including commands whose outcome is unknown. Identical fresh readings keep
+    the revision but advance observed_at. Versions are scoped to this service;
+    a microsecond epoch seed avoids reusing small counters after a restart.
     """
 
     def __init__(self, read: Callable[[], T], ttl: float, clock: Callable[[], float] = time.monotonic):
         self._read = read
         self._ttl = ttl
         self._clock = clock
-        # Held for the whole of a read, so concurrent callers queue behind one
-        # device round trip instead of each starting their own.
-        self._read_lock = threading.Lock()
-        # Guards the fields below, and is never held across a read.
+        self._read_lock = threading.RLock()
         self._state_lock = threading.Lock()
-        self._value: object = _MISSING
+        self._snapshot: Observation[T] | None = None
         self._read_at = 0.0
         self._generation = 0
         self._value_generation = -1
+        self._version = time.time_ns() // 1000
 
     def invalidate(self) -> None:
-        """
-        Drop the cached value, and any read already in flight along with it.
-
-        Commands call this: a read that started before the command cannot
-        describe the device after it.
-        """
         with self._state_lock:
             self._generation += 1
+            self._version += 1
 
     def get(self) -> T:
-        """Return the cached value, reading from the device if it is stale."""
-        cached = self._fresh()
-        if cached is not _MISSING:
-            return cached  # type: ignore[return-value]
+        return self.observation().value
 
+    def age_ms(self, observation: Observation[T]) -> int:
+        return max(0, int((self._clock() - observation.observed_monotonic) * 1000))
+
+    def observation(self) -> Observation[T]:
+        # Also taken by command(): a status read cannot sneak between a
+        # version check, a write, and invalidation. Waiting readers share the
+        # result even when the underlying read takes longer than the TTL.
         with self._read_lock:
-            # Another thread may have refreshed the value while we waited.
-            cached = self._fresh()
-            if cached is not _MISSING:
-                return cached  # type: ignore[return-value]
-
             with self._state_lock:
+                if (self._snapshot is not None and
+                        self._value_generation == self._generation and
+                        self._clock() - self._read_at < self._ttl):
+                    return self._snapshot
                 generation = self._generation
-
+                version = self._version
+            observed_monotonic = self._clock()
+            observed_at = datetime.now(timezone.utc)
             value = self._read()
-
             with self._state_lock:
-                # A command landed while the read was in flight, so this value
-                # describes the device before that command. Return it to the
-                # caller who waited for it, but do not serve it to anyone else.
-                if self._generation == generation:
-                    self._value = value
+                if generation == self._generation:
+                    if self._snapshot is None or value != self._snapshot.value:
+                        self._version += 1
+                    snapshot = Observation(value, observed_at, observed_monotonic, self._version)
+                    self._snapshot = snapshot
                     self._read_at = self._clock()
                     self._value_generation = generation
-            return value
+                    return snapshot
+                # An external invalidation during the read makes it unsuitable
+                # for reuse or a subsequent conditional write.
+                return Observation(value, observed_at, observed_monotonic, version)
 
-    def _fresh(self) -> object:
-        """The cached value if it is still usable, else `_MISSING`."""
-        with self._state_lock:
-            if self._value_generation != self._generation:
-                return _MISSING
-            if self._clock() - self._read_at >= self._ttl:
-                return _MISSING
-            return self._value
+    @contextmanager
+    def command(self, if_version: int | None = None) -> Iterator[None]:
+        with self._read_lock:
+            if if_version is not None:
+                observation = self.observation()  # refresh expired observations
+                with self._state_lock:
+                    matches = (observation.version == if_version == self._version and
+                               self._value_generation == self._generation)
+                if not matches:
+                    raise VersionConflict('status changed; refresh before applying')
+            try:
+                yield
+            finally:
+                # Even a timeout can follow an applied (or partial) command.
+                self.invalidate()

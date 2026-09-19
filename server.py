@@ -9,11 +9,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 import uvicorn
 
-from hdmi_matrix import HDMIMatrix
-from status_cache import StatusCache
+from hdmi_matrix import HDMIMatrix, CommandRejected, CommandTimeout
+from status_cache import StatusCache, VersionConflict
 from hdmi_matrix_status import (
     HDMIMatrixStatus,
     OneBigThreeSmallMode,
@@ -35,7 +35,7 @@ _matrix: HDMIMatrix | None = None
 # How long a status reading may be reused. Short enough that a client polling
 # every few seconds still sees the device itself, long enough that several
 # clients polling together cost one STA rather than one each.
-STATUS_CACHE_TTL = 1.0
+STATUS_CACHE_TTL = 0.2
 
 _status_cache: StatusCache[HDMIMatrixStatus] | None = None
 
@@ -77,15 +77,17 @@ class SetOutputAModeRequest(BaseModel):
     - 2pud: top, bottom
     - pip: main, small
     """
+    model_config = ConfigDict(extra="forbid")
+    resolution: str | None = None
     mode: str
-    input: int | None = None
-    combination: int | None = None
-    left: int | None = None
-    right: int | None = None
-    top: int | None = None
-    bottom: int | None = None
-    main: int | None = None
-    small: int | None = None
+    input: StrictInt | None = None
+    combination: StrictInt | None = None
+    left: StrictInt | None = None
+    right: StrictInt | None = None
+    top: StrictInt | None = None
+    bottom: StrictInt | None = None
+    main: StrictInt | None = None
+    small: StrictInt | None = None
 
 
 # Which fields each output A mode needs, keyed by the lowercase mode name
@@ -217,7 +219,6 @@ def set_output_input(
     request: SetOutputInputRequest,
     matrix: HDMIMatrix = Depends(get_matrix),
     cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache),
-    quick: bool = True,
 ) -> SuccessResponse:
     """
     Set a video output to a single input.
@@ -231,29 +232,11 @@ def set_output_input(
     - `response`: device response string
     """
     try:
-        logger.info(f"Received request to set output {request.output} to input {request.input}")
-
-        start_time = time.perf_counter()
-        response = matrix.set_output_input(request.output, request.input, quick=quick)
-        cache.invalidate()
-        end_time = time.perf_counter()
-        elapsed_time = end_time - start_time
-
-        logger.info(f"Set output {request.output} to input {request.input} (Elapsed time: {elapsed_time:.3f} seconds)")
-
-        if response is None and quick:
-            response = "(unknown)"
-
-        return SuccessResponse(status="success", response=response)
-
+        output = HDMIMatrix._validate_output(request.output)
+        inp = HDMIMatrix._validate_input(request.input)
     except ValueError as e:
-        # Validation error from HDMIMatrix
-        logger.error(f"Validation error from request: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        # Other errors (serial port, etc.)
-        logger.error(f"Error setting output: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return _execute([f'SPO{output}SI{inp}'], matrix, cache)
 
 
 @app.get('/status', responses={503: {"model": ErrorResponse}})
@@ -269,7 +252,7 @@ def get_status(cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache))
     """
     try:
         start_time = time.perf_counter()
-        status = cache.get()
+        observation = cache.observation()
         logger.debug(f"Read matrix status (Elapsed time: {time.perf_counter() - start_time:.3f} seconds)")
     except ValueError as e:
         logger.error(f"Could not parse matrix status: {str(e)}")
@@ -277,7 +260,12 @@ def get_status(cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache))
     except Exception as e:
         logger.error(f"Could not read matrix status: {str(e)}")
         return JSONResponse(status_code=503, content={"error": f"status read failed: {str(e)}"})
-    return _status_to_json(status)
+    return {
+        **_status_to_json(observation.value),
+        "observed_at": observation.observed_at.isoformat(),
+        "age_ms": cache.age_ms(observation),
+        "version": observation.version,
+    }
 
 
 @app.post('/set-output-a-mode', response_model=SuccessResponse)
@@ -291,53 +279,82 @@ def set_output_a_mode(
     `GET /status`, e.g. `{"mode": "pip", "main": 1, "small": 4}`.
     `{"mode": "single", "input": n}` routes input n to A full-screen.
     """
+    return _execute([_mode_command(request)], matrix, cache)
+
+
+def _mode_command(request: SetOutputAModeRequest) -> str:
     mode = request.mode.lower()
     needed = _MODE_FIELDS.get(mode)
     if needed is None:
         raise HTTPException(status_code=400, detail=f"unknown mode {request.mode!r}")
     given = {name: value for name, value in request.model_dump().items()
-             if name != "mode" and value is not None}
-    missing = [name for name in needed if name not in given]
-    extra = [name for name in given if name not in needed]
-    if missing or extra:
-        raise HTTPException(
-            status_code=400,
-            detail=f"mode {mode!r} needs {list(needed)}; missing {missing}, unexpected {extra}",
-        )
+             if name not in ("mode", "resolution") and value is not None}
+    if set(given) != set(needed):
+        raise HTTPException(status_code=400, detail=f"mode {mode!r} needs exactly {list(needed)}")
     for name in needed:
         if given[name] not in (1, 2, 3, 4):
-            raise HTTPException(status_code=400, detail=f"{name} must be 1-4, got {given[name]!r}")
+            raise HTTPException(status_code=400, detail=f"{name} must be 1-4")
+    if mode == 'single':
+        return f"SPOASI{given['input']:02d}"
+    return 'SPOA' + mode.upper() + ''.join(str(given[name]) for name in needed)
 
+
+def _execute(commands: list[str], matrix: HDMIMatrix,
+             cache: StatusCache[HDMIMatrixStatus], if_version: int | None = None) -> SuccessResponse:
     try:
-        logger.info(f"Received request to set output A mode to {mode} {given}")
-        start_time = time.perf_counter()
-        match mode:
-            case "single":
-                response = matrix.set_output_input("A", given["input"])
-            case "2x2":
-                response = matrix.set_output_a_2x2(given["combination"])
-            case "2plr":
-                response = matrix.set_output_a_side_by_side(given["left"], given["right"])
-            case "2pud":
-                response = matrix.set_output_a_top_bottom(given["top"], given["bottom"])
-            case "1b3s":
-                response = matrix.set_output_a_1big3small(given["combination"])
-            case "pip":
-                response = matrix.set_output_a_pip(given["main"], given["small"])
-            case _:
-                raise HTTPException(status_code=400, detail=f"unknown mode {mode!r}")
-        cache.invalidate()
-        elapsed_time = time.perf_counter() - start_time
-        logger.info(f"Set output A mode to {mode} (Elapsed time: {elapsed_time:.3f} seconds)")
-        return SuccessResponse(status="success", response=response or "")
-    except HTTPException:
-        raise
-    except ValueError as e:
-        logger.error(f"Validation error from request: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        with cache.command(if_version):
+            response = matrix.send_commands(commands)
+        return SuccessResponse(status="success", response=response)
+    except VersionConflict as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except CommandTimeout as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except CommandRejected as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        logger.error(f"Error setting output A mode: {str(e)}")
+        logger.exception("Matrix command failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class ApplyBRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    input: StrictInt = Field(ge=1, le=4)
+    resolution: str | None = None  # read-only; accepted when reusing routing
+
+
+class ApplyRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    A: SetOutputAModeRequest | StrictInt | None = None
+    B: ApplyBRequest | StrictInt | None = None
+    if_version: StrictInt | None = Field(default=None, ge=0)
+
+
+@app.post('/apply', response_model=SuccessResponse)
+def apply_outputs(
+    request: ApplyRequest,
+    matrix: HDMIMatrix = Depends(get_matrix),
+    cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache),
+) -> SuccessResponse:
+    """Apply one or both routes with paced writes and fully drained replies.
+
+    Accepts {"A": 2, "B": 4} or explicit mode/input objects. copy_a is not
+    writable here. if_version rejects stale observations with 409 before any
+    writes. Success acknowledges commands; /status still verifies application.
+    """
+    commands = []
+    if request.A is not None:
+        a = request.A
+        if isinstance(a, int):
+            a = SetOutputAModeRequest(mode='single', input=a)
+        commands.append(_mode_command(a))
+    if request.B is not None:
+        inp = request.B if isinstance(request.B, int) else request.B.input
+        if inp not in (1, 2, 3, 4):
+            raise HTTPException(status_code=400, detail="B input must be 1-4")
+        commands.append(f'SPOBSI{inp:02d}')
+    if not commands:
+        raise HTTPException(status_code=400, detail="at least one of A or B is required")
+    return _execute(commands, matrix, cache, request.if_version)
 
 
 def raw_command_enabled() -> bool:
@@ -409,18 +426,16 @@ def raw_command(
 
     logger.warning("Raw capture: sending %s", commands)
     try:
-        events = matrix.send_raw(
-            commands,
-            gap=request.gap,
-            read_seconds=request.read_seconds,
-            reset_input=request.reset_input,
-        )
+        with cache.command():
+            events = matrix.send_raw(
+                commands,
+                gap=request.gap,
+                read_seconds=request.read_seconds,
+                reset_input=request.reset_input,
+            )
     except Exception as e:
         logger.error(f"Raw capture failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # The commands may well have changed the routing.
-        cache.invalidate()
 
     rendered = []
     for event in events:

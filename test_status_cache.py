@@ -133,3 +133,94 @@ def test_a_command_during_a_read_keeps_that_reading_out_of_the_cache():
     assert cache.get() == "reading 1"
     assert cache.get() == "reading 2"
     assert reader.calls == 2
+
+
+def test_freshness_metadata_and_revision_track_observations():
+    clock = FakeClock()
+    value = ['same']
+    def reader():
+        clock.advance(.3)
+        return value[0]
+    cache = StatusCache(reader, ttl=.2, clock=clock)
+    first = cache.observation()
+    assert cache.age_ms(first) == 300
+    clock.advance(.1)
+    assert cache.observation() is first
+    clock.advance(.11)
+    second = cache.observation()
+    assert second.version == first.version
+    assert second.observed_monotonic > first.observed_monotonic
+    value[0] = 'changed remotely'
+    clock.advance(.21)
+    assert cache.observation().version > second.version
+
+
+def test_conditional_command_refreshes_expired_status_before_writing():
+    from status_cache import VersionConflict
+    clock = FakeClock()
+    reader = CountingReader()
+    cache = StatusCache(reader, ttl=.2, clock=clock)
+    version = cache.observation().version
+    clock.advance(.3)
+    with pytest.raises(VersionConflict):
+        with cache.command(version):
+            pytest.fail('stale command reached device')
+    assert reader.calls == 2
+
+
+def test_failed_command_invalidates_and_rejects_old_version():
+    from status_cache import VersionConflict
+    cache = StatusCache(lambda: 'unchanged', ttl=60)
+    version = cache.observation().version
+    with pytest.raises(OSError):
+        with cache.command(version):
+            raise OSError('lost acknowledgement')
+    with pytest.raises(VersionConflict):
+        with cache.command(version):
+            pytest.fail('reused version after uncertain write')
+
+
+def test_simultaneous_conditional_commands_cannot_both_write():
+    from status_cache import VersionConflict
+    cache = StatusCache(lambda: 'same', ttl=60)
+    version = cache.observation().version
+    gate = threading.Barrier(2)
+    outcomes = []
+    def apply():
+        gate.wait(timeout=5)
+        try:
+            with cache.command(version):
+                outcomes.append('written')
+        except VersionConflict:
+            outcomes.append('conflict')
+    threads = [threading.Thread(target=apply) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+        assert not t.is_alive()
+    assert sorted(outcomes) == ['conflict', 'written']
+
+
+def test_unchanged_refresh_allows_conditional_command():
+    clock = FakeClock()
+    cache = StatusCache(lambda: 'same', ttl=.2, clock=clock)
+    before = cache.observation()
+    clock.advance(.3)
+    with cache.command(before.version):
+        pass
+    assert cache.observation().version > before.version
+
+
+def test_failed_conditional_refresh_never_writes():
+    clock = FakeClock()
+    def read():
+        if clock.now > 0:
+            raise OSError('status unavailable')
+        return 'initial'
+    cache = StatusCache(read, ttl=.2, clock=clock)
+    version = cache.observation().version
+    clock.advance(.3)
+    with pytest.raises(OSError):
+        with cache.command(version):
+            pytest.fail('wrote without a usable observation')
