@@ -7,7 +7,7 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 import uvicorn
@@ -32,10 +32,9 @@ logger = logging.getLogger(__name__)
 # Global matrix instance (can be enhanced to support multiple connections)
 _matrix: HDMIMatrix | None = None
 
-# How long a status reading may be reused. Short enough that a client polling
-# every few seconds still sees the device itself, long enough that several
-# clients polling together cost one STA rather than one each.
-STATUS_CACHE_TTL = 0.2
+# Browsing status is not a reason to keep the matrix busy. Independent clients
+# share this observation; explicit verification opts into a shorter max_age.
+STATUS_CACHE_TTL = 5.0
 
 _status_cache: StatusCache[HDMIMatrixStatus] | None = None
 
@@ -240,11 +239,15 @@ def set_output_input(
 
 
 @app.get('/status', responses={503: {"model": ErrorResponse}})
-def get_status(cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache)) -> dict:
+def get_status(
+    cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache),
+    max_age: float | None = Query(default=None, ge=0, allow_inf_nan=False),
+) -> dict:
     """
     Read the device's status (STA) and return the routing state.
 
-    Readings are cached for `STATUS_CACHE_TTL`, and callers arriving during a
+    Readings are cached for 5 seconds by default. `max_age` (seconds) lets
+    explicit refreshes and verification request fresher data. Callers arriving during a
     read share its result, so several polling clients cost the serial port no
     more than one. A command invalidates the cache, so the reading after a
     switch always comes from the device. Returns 503 with `{"error": "..."}`
@@ -252,7 +255,7 @@ def get_status(cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache))
     """
     try:
         start_time = time.perf_counter()
-        observation = cache.observation()
+        observation = cache.observation(max_age=max_age)
         logger.debug(f"Read matrix status (Elapsed time: {time.perf_counter() - start_time:.3f} seconds)")
     except ValueError as e:
         logger.error(f"Could not parse matrix status: {str(e)}")

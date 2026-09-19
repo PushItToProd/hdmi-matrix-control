@@ -224,3 +224,32 @@ def test_failed_conditional_refresh_never_writes():
     with pytest.raises(OSError):
         with cache.command(version):
             pytest.fail('wrote without a usable observation')
+
+
+def test_staggered_display_clients_share_long_cache_but_verification_can_refresh():
+    reader, clock = CountingReader(), FakeClock()
+    cache = StatusCache(reader, ttl=5, clock=clock)
+    first = cache.observation()
+    for _ in range(4):
+        clock.advance(1)
+        assert cache.observation() is first
+    assert reader.calls == 1
+    fresh = cache.observation(max_age=.2)
+    assert reader.calls == 2
+    clock.advance(.1)
+    assert cache.observation(max_age=.2) is fresh
+    clock.advance(.21)
+    assert cache.observation(max_age=.2).value == 'reading 3'
+    assert cache.observation().value == 'reading 3'
+
+
+def test_long_display_cache_does_not_weaken_conditional_write_check():
+    from status_cache import VersionConflict
+    reader, clock = CountingReader(), FakeClock()
+    cache = StatusCache(reader, ttl=60, clock=clock)
+    version = cache.observation().version
+    clock.advance(1)
+    with pytest.raises(VersionConflict):
+        with cache.command(version):
+            pytest.fail('stale version reached the matrix')
+    assert reader.calls == 2

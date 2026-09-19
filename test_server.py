@@ -246,3 +246,32 @@ def test_legacy_quick_query_is_ignored_and_reply_is_drained(client, matrix):
     assert response.status_code == 200
     assert response.json()['response'] == 'ok'
     assert matrix.commands == [('SPOBSI04',)]
+
+
+def test_status_max_age_preserves_display_cache_and_refreshes_explicitly(matrix):
+    from test_status_cache import FakeClock
+    clock = FakeClock()
+    cache = StatusCache(matrix.get_status, ttl=server.STATUS_CACHE_TTL, clock=clock)
+    server.app.dependency_overrides[server.get_status_cache] = lambda: cache
+    try:
+        client = TestClient(server.app)
+        first = client.get('/status').json()
+        for _ in range(4):
+            clock.advance(1)
+            assert client.get('/status').json()['observed_at'] == first['observed_at']
+        assert matrix.status_reads == 1
+        assert client.get('/status?max_age=0.2').status_code == 200
+        assert matrix.status_reads == 2
+        clock.advance(.3)
+        assert client.get('/status?max_age=0.2').status_code == 200
+        assert matrix.status_reads == 3
+        assert client.get('/status').status_code == 200
+        assert matrix.status_reads == 3
+    finally:
+        server.app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize('age', ['-1', 'nan', 'inf'])
+def test_status_rejects_invalid_freshness_budget(client, matrix, age):
+    assert client.get('/status', params={'max_age': age}).status_code == 422
+    assert matrix.status_reads == 0

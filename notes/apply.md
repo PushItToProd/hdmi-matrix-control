@@ -49,9 +49,19 @@ outside `/apply`.
   attempted command, including uncertain outcomes. Identical fresh readings
   keep the revision and update the observation time.
 
-The cache retains single-flight reads and reuses a completed read for 200 ms,
-shorter than lrc's 300 ms verification interval. Age describes the observation;
-TTL describes reuse after its completion. Versions increase within a service
+The cache retains single-flight reads and reuses a completed read for **five
+seconds** by default. Ordinary status clients share that observation even if
+their requests arrive at different times. Explicit refresh and verification
+callers can use `GET /status?max_age=0.2` to request the previous 200 ms reuse
+budget, shorter than lrc's 300 ms verification interval. lrc requests that
+freshness on its scheduled and post-command reads; its scheduling determines
+how often it calls the service. Commands still invalidate the cache, and
+conditional writes check against a reading no more than 200 ms past completion,
+independently of the default display-cache TTL.
+
+Age describes the observation; `max_age` and TTL describe reuse after its
+completion. A supplied `max_age` can shorten, but not extend, the default TTL.
+Versions increase within a service
 instance and are seeded from epoch microseconds to avoid reusing small
 counters on ordinary restarts. They are not a persisted device sequence.
 
@@ -76,6 +86,14 @@ carry `if_version`; a 409 refreshes the UI and returns a refused result, even
 if the new observation happens to match the old intent. Other write failures
 still go through observation-based verification. Absolute routes do not need
 a version precondition. lrc preserves the service's observation timestamp.
+
+Passive lrc polling defaults to a five-second gap while watched and 30 seconds
+while idle. This is an incremental reduction from three seconds after reports
+of intermittent blackouts during status-only polling; five seconds has not yet
+been validated as a safe interval on the device. Multiple tabs connected to one
+lrc agent share its polling loop. The five-second default Portta cache also
+reduces reads from independent status consumers; clients explicitly requesting
+fresh readings still need to limit their own request rate.
 
 The commercial detector also sends one shorthand `/apply` request for its
 configured outputs, awaiting acknowledgement and logging failures without

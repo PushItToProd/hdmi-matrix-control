@@ -52,7 +52,13 @@ class StatusCache[T]:
     def age_ms(self, observation: Observation[T]) -> int:
         return max(0, int((self._clock() - observation.observed_monotonic) * 1000))
 
-    def observation(self) -> Observation[T]:
+    def observation(self, max_age: float | None = None) -> Observation[T]:
+        """Read only when the observation exceeds the caller's reuse budget.
+
+        Ordinary consumers share the long default TTL. Command verification
+        can request a shorter budget without shortening everybody else's.
+        """
+        ttl = self._ttl if max_age is None else min(self._ttl, max_age)
         # Also taken by command(): a status read cannot sneak between a
         # version check, a write, and invalidation. Waiting readers share the
         # result even when the underlying read takes longer than the TTL.
@@ -60,7 +66,7 @@ class StatusCache[T]:
             with self._state_lock:
                 if (self._snapshot is not None and
                         self._value_generation == self._generation and
-                        self._clock() - self._read_at < self._ttl):
+                        self._clock() - self._read_at < ttl):
                     return self._snapshot
                 generation = self._generation
                 version = self._version
@@ -84,7 +90,8 @@ class StatusCache[T]:
     def command(self, if_version: int | None = None) -> Iterator[None]:
         with self._read_lock:
             if if_version is not None:
-                observation = self.observation()  # refresh expired observations
+                # Conditional writes must not accept the long display-cache TTL.
+                observation = self.observation(max_age=0.2)
                 with self._state_lock:
                     matches = (observation.version == if_version == self._version and
                                self._value_generation == self._generation)
