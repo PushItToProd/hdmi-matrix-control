@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-09-19T16:04:46.979423+00:00",
+  "request": {
+    "commands": [
+      "spobsi04"
+    ],
+    "gap": 0.1,
+    "read_seconds": 2
+  },
+  "events": [
+    {
+      "at_ms": 0.1,
+      "kind": "write",
+      "command": "spobsi04"
+    },
+    {
+      "at_ms": 5.6,
+      "kind": "read",
+      "bytes": 70,
+      "text": "spobsi04\\r\\n\\r<s>SPOBSI04</s><user>Set Output B to Video Input 04</user>\\r",
+      "base64": "c3BvYnNpMDQNCg08cz5TUE9CU0kwNDwvcz48dXNlcj5TZXQgT3V0cHV0IEIgdG8gVmlkZW8gSW5wdXQgMDQ8L3VzZXI+DQ=="
+    }
+  ]
+}

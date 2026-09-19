@@ -1,0 +1,37 @@
+{
+  "recorded_at": "2026-09-19T16:02:49.331865+00:00",
+  "request": {
+    "commands": [
+      "spoasi02",
+      "spobsi04"
+    ],
+    "gap": 0.1,
+    "read_seconds": 2
+  },
+  "events": [
+    {
+      "at_ms": 0.1,
+      "kind": "write",
+      "command": "spoasi02"
+    },
+    {
+      "at_ms": 6.1,
+      "kind": "read",
+      "bytes": 70,
+      "text": "spoasi02\\r\\n\\r<s>SPOASI02</s><user>Set Output A to Video Input 02</user>\\r",
+      "base64": "c3BvYXNpMDINCg08cz5TUE9BU0kwMjwvcz48dXNlcj5TZXQgT3V0cHV0IEEgdG8gVmlkZW8gSW5wdXQgMDI8L3VzZXI+DQ=="
+    },
+    {
+      "at_ms": 100.4,
+      "kind": "write",
+      "command": "spobsi04"
+    },
+    {
+      "at_ms": 320.3,
+      "kind": "read",
+      "bytes": 70,
+      "text": "spobsi04\\r\\n\\r<s>SPOBSI04</s><user>Set Output B to Video Input 04</user>\\r",
+      "base64": "c3BvYnNpMDQNCg08cz5TUE9CU0kwNDwvcz48dXNlcj5TZXQgT3V0cHV0IEIgdG8gVmlkZW8gSW5wdXQgMDQ8L3VzZXI+DQ=="
+    }
+  ]
+}

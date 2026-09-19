@@ -1,0 +1,44 @@
+{
+  "recorded_at": "2026-09-19T16:03:00.737326+00:00",
+  "request": {
+    "commands": [
+      "spobsi01",
+      "sta"
+    ],
+    "gap": 0.1,
+    "read_seconds": 2
+  },
+  "events": [
+    {
+      "at_ms": 0.0,
+      "kind": "write",
+      "command": "spobsi01"
+    },
+    {
+      "at_ms": 4.1,
+      "kind": "read",
+      "bytes": 70,
+      "text": "spobsi01\\r\\n\\r<s>SPOBSI01</s><user>Set Output B to Video Input 01</user>\\r",
+      "base64": "c3BvYnNpMDENCg08cz5TUE9CU0kwMTwvcz48dXNlcj5TZXQgT3V0cHV0IEIgdG8gVmlkZW8gSW5wdXQgMDE8L3VzZXI+DQ=="
+    },
+    {
+      "at_ms": 100.6,
+      "kind": "write",
+      "command": "sta"
+    },
+    {
+      "at_ms": 343.1,
+      "kind": "read",
+      "bytes": 1,
+      "text": "s",
+      "base64": "cw=="
+    },
+    {
+      "at_ms": 367.1,
+      "kind": "read",
+      "bytes": 1748,
+      "text": "ta\\r\\n\\r-------------------------------------------------------------------------\\r\\n\\r\\r--                           Systems STATUS                            --\\r\\n\\r\\r-------------------------------------------------------------------------\\r\\n\\r\\r-- 4PET0402QMS,                        Device Name: 4PET0402QMS_0001   --\\r\\n\\r\\r--  F/W Version: 1.00                                                  --\\r\\n\\r\\r-- Power : ON                                                          --\\r\\n\\r\\r-- Front Panel Button : Enabled                                        --\\r\\n\\r\\r-- RS232 : Baud Rate=57600bps, Data=8bit, Parity=None, Stop=1bit       --\\r\\n\\r\\r--                                                                     --\\r\\n\\r\\r-- Video Input 01 :  LINK = ON                                         --\\r\\n\\r\\r-- Video Input 02 :  LINK = OFF                                        --\\r\\n\\r\\r-- Video Input 03 :  LINK = OFF                                        --\\r\\n\\r\\r-- Video Input 04 :  LINK = ON                                         --\\r\\n\\r\\r--                                                                     --\\r\\n\\r\\r-- Video Output: Output  = ON , DBG = ON                               --\\r\\n\\r\\r-- Output A Video Mode: 2PLR 1 4 , RES = 1080p                         --\\r\\n\\r\\r-- Output B Video Mode: Input1 , RES = 1920x1080p, COPY OUTA MODE = OFF--\\r\\n\\r\\r--                                                                     --\\r\\n\\r\\r-- Audio Output : Enabled                                              --\\r\\n\\r\\r-- Audio Mode : 2.1CH                                                  --\\r\\n\\r\\r-- Audio Input Channel : Input 1                                       --\\r\\n\\r\\r-------------------------------------------------------------------------\\r\\n\\r\\r<s>STA</s><user>Show Global System Status</user>\\r",
+      "base64": "dGENCg0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tDQoNDS0tICAgICAgICAgICAgICAgICAgICAgICAgICAgU3lzdGVtcyBTVEFUVVMgICAgICAgICAgICAgICAgICAgICAgICAgICAgLS0NCg0NLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQ0KDQ0tLSA0UEVUMDQwMlFNUywgICAgICAgICAgICAgICAgICAgICAgICBEZXZpY2UgTmFtZTogNFBFVDA0MDJRTVNfMDAwMSAgIC0tDQoNDS0tICBGL1cgVmVyc2lvbjogMS4wMCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLS0NCg0NLS0gUG93ZXIgOiBPTiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAtLQ0KDQ0tLSBGcm9udCBQYW5lbCBCdXR0b24gOiBFbmFibGVkICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC0tDQoNDS0tIFJTMjMyIDogQmF1ZCBSYXRlPTU3NjAwYnBzLCBEYXRhPThiaXQsIFBhcml0eT1Ob25lLCBTdG9wPTFiaXQgICAgICAgLS0NCg0NLS0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAtLQ0KDQ0tLSBWaWRlbyBJbnB1dCAwMSA6ICBMSU5LID0gT04gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC0tDQoNDS0tIFZpZGVvIElucHV0IDAyIDogIExJTksgPSBPRkYgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLS0NCg0NLS0gVmlkZW8gSW5wdXQgMDMgOiAgTElOSyA9IE9GRiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAtLQ0KDQ0tLSBWaWRlbyBJbnB1dCAwNCA6ICBMSU5LID0gT04gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC0tDQoNDS0tICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLS0NCg0NLS0gVmlkZW8gT3V0cHV0OiBPdXRwdXQgID0gT04gLCBEQkcgPSBPTiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAtLQ0KDQ0tLSBPdXRwdXQgQSBWaWRlbyBNb2RlOiAyUExSIDEgNCAsIFJFUyA9IDEwODBwICAgICAgICAgICAgICAgICAgICAgICAgIC0tDQoNDS0tIE91dHB1dCBCIFZpZGVvIE1vZGU6IElucHV0MSAsIFJFUyA9IDE5MjB4MTA4MHAsIENPUFkgT1VUQSBNT0RFID0gT0ZGLS0NCg0NLS0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAtLQ0KDQ0tLSBBdWRpbyBPdXRwdXQgOiBFbmFibGVkICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC0tDQoNDS0tIEF1ZGlvIE1vZGUgOiAyLjFDSCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLS0NCg0NLS0gQXVkaW8gSW5wdXQgQ2hhbm5lbCA6IElucHV0IDEgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAtLQ0KDQ0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tDQoNDTxzPlNUQTwvcz48dXNlcj5TaG93IEdsb2JhbCBTeXN0ZW0gU3RhdHVzPC91c2VyPg0="
+    }
+  ]
+}

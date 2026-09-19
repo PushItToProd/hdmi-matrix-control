@@ -1,0 +1,61 @@
+{
+  "before": {
+    "outputs": {
+      "A": {
+        "mode": "2plr",
+        "left": 1,
+        "right": 4,
+        "resolution": "1080p"
+      },
+      "B": {
+        "input": 4,
+        "copy_a": false,
+        "resolution": "1920x1080p"
+      }
+    },
+    "inputs": {
+      "1": {
+        "linked": true
+      },
+      "2": {
+        "linked": false
+      },
+      "3": {
+        "linked": false
+      },
+      "4": {
+        "linked": true
+      }
+    }
+  },
+  "after": {
+    "outputs": {
+      "A": {
+        "mode": "2plr",
+        "left": 1,
+        "right": 4,
+        "resolution": "1080p"
+      },
+      "B": {
+        "input": 1,
+        "copy_a": false,
+        "resolution": "1920x1080p"
+      }
+    },
+    "inputs": {
+      "1": {
+        "linked": true
+      },
+      "2": {
+        "linked": false
+      },
+      "3": {
+        "linked": false
+      },
+      "4": {
+        "linked": true
+      }
+    }
+  },
+  "target": 1
+}

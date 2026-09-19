@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-09-19T16:02:56.585643+00:00",
+  "request": {
+    "commands": [
+      "spoa2plr14",
+      "spobsi01"
+    ],
+    "gap": 0.1,
+    "read_seconds": 2
+  },
+  "events": [
+    {
+      "at_ms": 0.1,
+      "kind": "write",
+      "command": "spoa2plr14"
+    },
+    {
+      "at_ms": 100.5,
+      "kind": "write",
+      "command": "spobsi01"
+    },
+    {
+      "at_ms": 338.1,
+      "kind": "read",
+      "bytes": 165,
+      "text": "spoa2plr14\\r\\n\\r<s>SPOA2PLR14</s><user>Set Output A to two Video Input Left 1/right 4 mode</user>\\rspobsi01\\r\\n\\r<s>SPOBSI01</s><user>Set Output B to Video Input 01</user>\\r",
+      "base64": "c3BvYTJwbHIxNA0KDTxzPlNQT0EyUExSMTQ8L3M+PHVzZXI+U2V0IE91dHB1dCBBIHRvIHR3byBWaWRlbyBJbnB1dCBMZWZ0IDEvcmlnaHQgNCBtb2RlPC91c2VyPg1zcG9ic2kwMQ0KDTxzPlNQT0JTSTAxPC9zPjx1c2VyPlNldCBPdXRwdXQgQiB0byBWaWRlbyBJbnB1dCAwMTwvdXNlcj4N"
+    }
+  ]
+}

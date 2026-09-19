@@ -1,0 +1,45 @@
+{
+  "/health": {
+    "http_status": 200,
+    "body": {
+      "status": "ok"
+    }
+  },
+  "/status": {
+    "http_status": 200,
+    "body": {
+      "outputs": {
+        "A": {
+          "mode": "single",
+          "input": 1,
+          "resolution": "1080p"
+        },
+        "B": {
+          "input": 4,
+          "copy_a": false,
+          "resolution": "1920x1080p"
+        }
+      },
+      "inputs": {
+        "1": {
+          "linked": false
+        },
+        "2": {
+          "linked": false
+        },
+        "3": {
+          "linked": false
+        },
+        "4": {
+          "linked": true
+        }
+      }
+    }
+  },
+  "/debug/raw-command": {
+    "http_status": 404,
+    "body": {
+      "detail": "Not Found"
+    }
+  }
+}

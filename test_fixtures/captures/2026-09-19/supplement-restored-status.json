@@ -1,0 +1,28 @@
+{
+  "outputs": {
+    "A": {
+      "mode": "single",
+      "input": 1,
+      "resolution": "1080p"
+    },
+    "B": {
+      "input": 4,
+      "copy_a": false,
+      "resolution": "1920x1080p"
+    }
+  },
+  "inputs": {
+    "1": {
+      "linked": true
+    },
+    "2": {
+      "linked": false
+    },
+    "3": {
+      "linked": false
+    },
+    "4": {
+      "linked": true
+    }
+  }
+}
