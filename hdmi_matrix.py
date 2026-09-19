@@ -130,6 +130,89 @@ class HDMIMatrix:
             response = self._serial.read_until(self.RESPONSE_TERMINATOR)
             return response.decode('ascii', errors='replace')
 
+    # ------------------------------------------------------------------
+    # Raw capture
+    # ------------------------------------------------------------------
+
+    def send_raw(
+        self,
+        commands: list[str],
+        gap: float = 0.1,
+        read_seconds: float = 1.5,
+        settle: float = 0.02,
+        reset_input: bool = True,
+    ) -> list[dict]:
+        """
+        Write commands back to back and record every byte the device sends,
+        with arrival times. Used to learn what the device actually does with
+        commands that arrive while it is still working on the previous one;
+        the framing the rest of this class relies on is derived from captures
+        taken this way.
+
+        Unlike `_send`, this makes no assumption about where a reply ends. It
+        reads for a fixed window and reports what arrived, so a reply that is
+        late, interleaved with another, or absent shows up as such instead of
+        being mistaken for the next command's reply.
+
+        Args:
+            commands:     Commands to write, without the trailing carriage
+                          return. Written in order.
+            gap:          Seconds between writes. The device drops a command
+                          that arrives too soon after the previous one.
+            read_seconds: How long to keep reading after the last write.
+            settle:       Bytes still arriving within this many seconds join
+                          the preceding chunk, so one reply is one event
+                          rather than hundreds of single-byte ones.
+            reset_input:  Discard buffered input before the first write.
+
+        Returns:
+            Events in order, each `{"at_ms", "kind", ...}` where `at_ms` is
+            milliseconds since the first write. A "write" event carries
+            `command`; a "read" event carries the `data` bytes.
+        """
+        events: list[dict] = []
+        with self._lock:
+            previous_timeout = self._serial.timeout
+            try:
+                if reset_input:
+                    self._serial.reset_input_buffer()
+                start = time.monotonic()
+                for index, command in enumerate(commands):
+                    if index:
+                        self._capture_until(start, time.monotonic() + gap, settle, events)
+                    self._serial.write(f'{command}\r'.encode('ascii'))
+                    events.append({
+                        'at_ms': round((time.monotonic() - start) * 1000, 1),
+                        'kind': 'write',
+                        'command': command,
+                    })
+                self._capture_until(start, time.monotonic() + read_seconds, settle, events)
+            finally:
+                self._serial.timeout = previous_timeout
+        return events
+
+    def _capture_until(self, start: float, deadline: float, settle: float, events: list[dict]):
+        """Read until `deadline`, appending one event per burst of bytes."""
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            self._serial.timeout = remaining
+            chunk = self._serial.read(1)
+            if not chunk:
+                continue  # nothing arrived before the deadline
+            at_ms = round((time.monotonic() - start) * 1000, 1)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._serial.timeout = min(settle, remaining)
+                more = self._serial.read(max(1, self._serial.in_waiting))
+                if not more:
+                    break
+                chunk += more
+            events.append({'at_ms': at_ms, 'kind': 'read', 'data': chunk})
+
     @classmethod
     def _validate_output(cls, output: str):
         """Accept output letter 'A' or 'B', case-insensitive."""

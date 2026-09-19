@@ -28,10 +28,14 @@ Can be used as RS-232 control port
 Baud rate is 57600
 ```
 
-Although the notes above state "The response terminates with a carriage return followed by a line feed \[CRLF\]", this isn't necessarily true/useful for all commands:
+Two of the notes above don't hold for this unit.
+
+Note 5 says "The response terminates with a carriage return followed by a line feed \[CRLF\]", which isn't true or useful for all commands:
 
 - The `STA` and `H` commands use CRLF for all newlines, so just reading until the first CRLF won't get the full output.
 - Commands sent to the HDMI matrix are echoed back, including the CRLF at the end, so we need to read at least two lines to get the full response.
+
+Note 4 says input selections made from the front panel button, IR remote, serial IR in, the USB service port, or the trigger input emit a message on the serial port. This unit does not: only a command sent over RS232 produces output, and the port stays silent when an input is selected by any other means. Some firmware or hardware revisions of this chip may behave as the manual describes, so a reader that has to tolerate unsolicited output isn't wrong in general -- it just isn't needed here. What *is* needed is that a reply arriving later than expected doesn't get mistaken for the next command's reply; see "Command outputs" below.
 
 ## Commands
 

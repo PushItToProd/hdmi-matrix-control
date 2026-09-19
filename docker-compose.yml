@@ -8,6 +8,9 @@ services:
       - ${HDMI_MATRIX_SERIAL_PORT:-/dev/ttyACM0}:/dev/ttyACM0
     environment:
       - FLASK_ENV=${FLASK_ENV:-production}
+      # Set to 1 to expose POST /debug/raw-command, which writes arbitrary
+      # commands to the device and returns its raw reply. Off by default.
+      - HDMI_MATRIX_ENABLE_RAW_COMMAND=${HDMI_MATRIX_ENABLE_RAW_COMMAND:-}
     volumes:
       - .:/app
     restart: unless-stopped

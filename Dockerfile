@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy project files
 COPY pyproject.toml LICENSE ./
-COPY server.py hdmi_matrix.py hdmi_matrix_status.py ./
+COPY server.py hdmi_matrix.py hdmi_matrix_status.py status_cache.py ./
 
 # Install Python dependencies
 RUN pip install --upgrade pip && pip install --no-cache-dir -e .

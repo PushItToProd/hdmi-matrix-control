@@ -43,6 +43,13 @@ class StubMatrix:
         self.commands.append(("set_output_a_pip", main, small))
         return "ok"
 
+    def send_raw(self, commands, gap=0.1, read_seconds=1.5, reset_input=True):
+        self.commands.append(("send_raw", tuple(commands), gap, read_seconds, reset_input))
+        return [
+            {"at_ms": 0.0, "kind": "write", "command": commands[0]},
+            {"at_ms": 118.4, "kind": "read", "data": b"ok\r\n"},
+        ]
+
 
 @pytest.fixture
 def matrix():
@@ -117,3 +124,57 @@ def test_status_reports_503_when_the_device_cannot_be_read(matrix):
         assert "serial port went away" in resp.json()["error"]
     finally:
         server.app.dependency_overrides.clear()
+
+
+# --- raw capture endpoint ------------------------------------------------
+#
+# The endpoint writes arbitrary commands to the device, so the flag being off
+# by default is part of its contract, not a detail.
+
+
+@pytest.fixture
+def raw_enabled(monkeypatch):
+    monkeypatch.setenv("HDMI_MATRIX_ENABLE_RAW_COMMAND", "1")
+
+
+def test_raw_capture_is_absent_unless_the_flag_is_set(client, monkeypatch):
+    monkeypatch.delenv("HDMI_MATRIX_ENABLE_RAW_COMMAND", raising=False)
+    response = client.post("/debug/raw-command", json={"commands": ["sta"]})
+    assert response.status_code == 404
+
+
+def test_raw_capture_returns_the_bytes_and_their_arrival_times(client, matrix, raw_enabled):
+    response = client.post("/debug/raw-command", json={"commands": ["spoasi02", "spobsi04"]})
+    assert response.status_code == 200
+    assert matrix.commands == [("send_raw", ("spoasi02", "spobsi04"), 0.1, 1.5, True)]
+    assert response.json()["events"] == [
+        {"at_ms": 0.0, "kind": "write", "command": "spoasi02"},
+        {"at_ms": 118.4, "kind": "read", "bytes": 4, "text": "ok\\r\\n", "base64": "b2sNCg=="},
+    ]
+
+
+def test_raw_capture_strips_spaces_from_commands(client, matrix, raw_enabled):
+    client.post("/debug/raw-command", json={"commands": ["spob copy outa on"]})
+    assert matrix.commands[0][1] == ("spobcopyoutaon",)
+
+
+def test_raw_capture_invalidates_the_cached_status(client, matrix, raw_enabled):
+    client.get("/status")
+    client.post("/debug/raw-command", json={"commands": ["spoasi02"]})
+    client.get("/status")
+    assert matrix.status_reads == 2
+
+
+@pytest.mark.parametrize("command", ["spcrsb3", "SPC DF"])
+def test_raw_capture_refuses_commands_needing_physical_access_to_undo(
+    client, matrix, raw_enabled, command
+):
+    response = client.post("/debug/raw-command", json={"commands": [command]})
+    assert response.status_code == 400
+    assert matrix.commands == []
+
+
+def test_raw_capture_refuses_to_hold_the_port_too_long(client, matrix, raw_enabled):
+    response = client.post("/debug/raw-command", json={"commands": ["sta"], "read_seconds": 60})
+    assert response.status_code == 400
+    assert matrix.commands == []

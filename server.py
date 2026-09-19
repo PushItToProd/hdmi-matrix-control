@@ -1,6 +1,8 @@
 """
 FastAPI service for controlling the HDMI matrix via HTTP API.
 """
+import base64
+import os
 import time
 import logging
 from contextlib import asynccontextmanager
@@ -36,6 +38,15 @@ _matrix: HDMIMatrix | None = None
 STATUS_CACHE_TTL = 1.0
 
 _status_cache: StatusCache[HDMIMatrixStatus] | None = None
+
+# Commands the raw-capture endpoint will not send. Both are recoverable only
+# with physical access: SPCRSB changes the device's baud rate, leaving the
+# service unable to talk to it at all, and SPCDF wipes the configuration.
+# Send them with main.py if they are ever actually wanted.
+RAW_COMMAND_DENIED = ('SPCRSB', 'SPCDF')
+
+# Longest a raw capture may hold the serial port, which it does exclusively.
+RAW_COMMAND_MAX_SECONDS = 30.0
 
 
 class SetOutputInputRequest(BaseModel):
@@ -128,6 +139,17 @@ def _status_to_json(status: HDMIMatrixStatus) -> dict:
             for i, linked in enumerate(status.input_links)
         },
     }
+
+
+class RawCommandRequest(BaseModel):
+    """
+    Request model for a raw capture. Defaults match how the service drives the
+    device, so the common case is just `{"commands": [...]}`.
+    """
+    commands: list[str]
+    gap: float = 0.1
+    read_seconds: float = 1.5
+    reset_input: bool = True
 
 
 class HealthResponse(BaseModel):
@@ -316,6 +338,104 @@ def set_output_a_mode(
     except Exception as e:
         logger.error(f"Error setting output A mode: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def raw_command_enabled() -> bool:
+    """
+    Whether the raw-capture endpoint is available.
+
+    Read per request rather than at import so the flag can be flipped in tests
+    and so a deploy that sets it does not depend on import order.
+    """
+    return os.environ.get('HDMI_MATRIX_ENABLE_RAW_COMMAND', '').lower() in ('1', 'true', 'yes', 'on')
+
+
+def _render(data: bytes) -> str:
+    """Render device bytes with the framing visible."""
+    return (
+        data.decode('ascii', errors='replace')
+        .replace('\\', '\\\\')
+        .replace('\r', '\\r')
+        .replace('\n', '\\n')
+    )
+
+
+@app.post('/debug/raw-command')
+def raw_command(
+    request: RawCommandRequest,
+    matrix: HDMIMatrix = Depends(get_matrix),
+    cache: StatusCache[HDMIMatrixStatus] = Depends(get_status_cache),
+) -> dict:
+    """
+    Write raw commands to the device and return every byte it sends back, with
+    arrival times. Disabled unless `HDMI_MATRIX_ENABLE_RAW_COMMAND` is set;
+    otherwise it 404s like any other unrouted path.
+
+    This exists to answer questions the normal endpoints cannot, because they
+    impose the framing that is in question: what the device does with commands
+    sent back to back, how long it defers a reply, and whether two replies
+    interleave. Spaces in a command are stripped, as elsewhere, so
+    `"spob copy outa on"` works.
+
+    **Response:**
+    - `events`: in order, each with `at_ms` (milliseconds since the first
+      write) and `kind`. A `write` event carries `command`; a `read` event
+      carries `bytes`, `text` (with `\r`/`\n` escaped) and `base64`.
+    """
+    if not raw_command_enabled():
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    commands = [c.replace(' ', '').strip() for c in request.commands]
+    if not commands:
+        raise HTTPException(status_code=400, detail="commands must not be empty")
+    for command in commands:
+        if not command:
+            raise HTTPException(status_code=400, detail="commands must not contain a blank entry")
+        if not command.isascii() or not command.isprintable():
+            raise HTTPException(status_code=400, detail=f"command {command!r} must be printable ASCII")
+        if command.upper().startswith(RAW_COMMAND_DENIED):
+            raise HTTPException(
+                status_code=400,
+                detail=f"command {command!r} is not allowed here; it needs physical access to undo",
+            )
+    if request.gap < 0 or request.read_seconds <= 0:
+        raise HTTPException(status_code=400, detail="gap must be >= 0 and read_seconds > 0")
+    budget = request.gap * (len(commands) - 1) + request.read_seconds
+    if budget > RAW_COMMAND_MAX_SECONDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"capture would hold the port for {budget:.1f}s, over the {RAW_COMMAND_MAX_SECONDS:.0f}s limit",
+        )
+
+    logger.warning("Raw capture: sending %s", commands)
+    try:
+        events = matrix.send_raw(
+            commands,
+            gap=request.gap,
+            read_seconds=request.read_seconds,
+            reset_input=request.reset_input,
+        )
+    except Exception as e:
+        logger.error(f"Raw capture failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # The commands may well have changed the routing.
+        cache.invalidate()
+
+    rendered = []
+    for event in events:
+        if event['kind'] == 'read':
+            data = event['data']
+            rendered.append({
+                'at_ms': event['at_ms'],
+                'kind': 'read',
+                'bytes': len(data),
+                'text': _render(data),
+                'base64': base64.b64encode(data).decode('ascii'),
+            })
+        else:
+            rendered.append(event)
+    return {'events': rendered}
 
 
 @app.get('/health', response_model=HealthResponse)
