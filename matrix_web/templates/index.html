@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"selfRequestsOnly":true,"historyCacheSize":0}'>
+  <title>HDMI matrix</title>
+  <link rel="stylesheet" href="/ui/static/style.css">
+  <script src="/ui/static/htmx.min.js" defer></script>
+  <script src="/ui/static/ui.js" defer></script>
+</head>
+<body>
+  <main id="matrix" hx-sync="#matrix:queue all">
+    <header>
+      <div><h1>HDMI matrix</h1><p>4 inputs · 2 outputs</p></div>
+      <button type="button" hx-post="/ui/refresh" hx-target="#state" hx-swap="outerHTML"
+              hx-disabled-elt="#matrix button, #matrix select">Refresh from device</button>
+    </header>
+    <noscript><p class="notice error">JavaScript is required to use the matrix controls.</p></noscript>
+    <p id="connection-error" class="notice error" role="alert" hidden>Cannot reach the service. Check the connection and try again.</p>
+    {% include 'state.html' %}
+    <footer>API changes appear automatically. Device readings are manual.</footer>
+  </main>
+</body>
+</html>

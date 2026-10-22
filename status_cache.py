@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from copy import deepcopy
 
 
 class VersionConflict(Exception):
@@ -17,6 +18,14 @@ class Observation[T]:
     value: T
     observed_at: datetime
     observed_monotonic: float
+    version: int
+
+
+@dataclass(frozen=True)
+class RememberedState[T]:
+    observation: Observation[T] | None
+    requested: dict[str, dict]
+    uncertain: bool
     version: int
 
 
@@ -40,6 +49,27 @@ class StatusCache[T]:
         self._generation = 0
         self._value_generation = -1
         self._version = time.time_ns() // 1000
+        self._requested: dict[str, dict] = {}
+        self._uncertain = False
+        self._last_read_attempt = float('-inf')
+
+    def remembered(self) -> RememberedState[T]:
+        """Return display state without performing serial I/O."""
+        with self._state_lock:
+            return RememberedState(self._snapshot, deepcopy(self._requested),
+                                   self._uncertain, self._version)
+
+    def refresh_display(self, minimum_interval: float = 5.0) -> bool:
+        """Read on explicit refresh, sharing a cooldown across UI clients.
+
+        Failed reads also consume the cooldown. API verification retains its
+        existing max_age contract, but its reads count toward this UI limit.
+        """
+        with self._read_lock:
+            if self._clock() - self._last_read_attempt < minimum_interval:
+                return False
+            self.observation(max_age=0)
+            return True
 
     def invalidate(self) -> None:
         with self._state_lock:
@@ -72,6 +102,7 @@ class StatusCache[T]:
                 version = self._version
             observed_monotonic = self._clock()
             observed_at = datetime.now(timezone.utc)
+            self._last_read_attempt = observed_monotonic
             value = self._read()
             with self._state_lock:
                 if generation == self._generation:
@@ -81,13 +112,16 @@ class StatusCache[T]:
                     self._snapshot = snapshot
                     self._read_at = self._clock()
                     self._value_generation = generation
+                    self._requested.clear()
+                    self._uncertain = False
                     return snapshot
                 # An external invalidation during the read makes it unsuitable
                 # for reuse or a subsequent conditional write.
                 return Observation(value, observed_at, observed_monotonic, version)
 
     @contextmanager
-    def command(self, if_version: int | None = None) -> Iterator[None]:
+    def command(self, if_version: int | None = None,
+                requested: dict[str, dict] | None = None) -> Iterator[None]:
         with self._read_lock:
             if if_version is not None:
                 # Conditional writes must not accept the long display-cache TTL.
@@ -97,8 +131,16 @@ class StatusCache[T]:
                                self._value_generation == self._generation)
                 if not matches:
                     raise VersionConflict('status changed; refresh before applying')
+            succeeded = False
             try:
                 yield
+                succeeded = True
             finally:
                 # Even a timeout can follow an applied (or partial) command.
                 self.invalidate()
+                with self._state_lock:
+                    if succeeded and requested:
+                        for output, route in requested.items():
+                            self._requested[output] = dict(route)
+                    else:
+                        self._uncertain = True

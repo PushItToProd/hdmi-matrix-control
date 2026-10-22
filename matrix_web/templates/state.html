@@ -1,0 +1,61 @@
+<div id="state" hx-get="/ui/state" hx-trigger="every 5s" hx-swap="outerHTML">
+  <div class="notice-area" aria-live="polite" aria-atomic="true">
+    {% if message %}<p class="notice {{ 'error' if error else '' }}" role="{{ 'alert' if error else 'status' }}">{{ message }}</p>{% endif %}
+    {% if uncertain %}<p class="notice error">Routing is uncertain after an untracked or failed command. Refresh from device to verify.</p>{% endif %}
+    {% if requested %}<p class="notice">Showing last acknowledged API requests for output {{ requested.keys() | join(', ') }}. These routes have not been verified by a device reading.</p>{% endif %}
+  </div>
+  <section class="signals" aria-label="Last observed device state">
+    <div class="reading"><strong>Last device reading</strong><span>{% if observed_at %}<time datetime="{{ observed_at }}">{{ observed_at }}</time>{% else %}No reading yet{% endif %}</span></div>
+    {% for n in range(1, 5) %}
+      {% set link = state.inputs.get(n|string, {}).get('linked') %}
+      <div class="signal"><strong>Input {{ n }}</strong><span><i class="dot {{ 'linked' if link else '' }}" aria-hidden="true"></i>{{ 'Linked' if link else ('No signal' if link is sameas false else 'Unknown') }}</span></div>
+    {% endfor %}
+  </section>
+  <div class="outputs">
+    {% for output in ['A', 'B'] %}
+      {% set route = state.outputs.get(output, {}) %}
+      <section class="output" aria-labelledby="heading-{{ output }}">
+        <h2 id="heading-{{ output }}">Output {{ output }}</h2>
+        <div class="route">
+          <strong>{{ 'Requested route' if output in requested else 'Current route' }}</strong>
+          <p class="route-name">
+            {% if output == 'B' and route.get('copy_a') %}Copies Output A{% elif route.get('input') %}Input {{ route.input }}{% elif output == 'B' and route.get('input') == 0 %}No display{% elif route.get('mode') in modes %}{{ modes[route.mode][0] }}{% else %}Unknown{% endif %}
+          </p>
+          {% if output == 'A' and route.get('mode', 'single') != 'single' %}
+            <p class="route-detail">{% for field in modes[route.mode][1] %}{{ labels[field] }} {{ route[field] }}{{ ' · ' if not loop.last else '' }}{% endfor %}</p>
+          {% endif %}
+          <strong>Resolution</strong><p class="muted">{{ route.get('resolution') or ('Not re-read after command' if output in requested else 'Unknown') }}</p>
+        </div>
+        <div class="switcher">
+          <h3>Quick switch input</h3>
+          <div class="input-buttons" role="group" aria-label="Output {{ output }} input">
+            {% for n in range(1, 5) %}
+              {% set active = route.get('input') == n and not route.get('copy_a') and (output == 'B' or route.get('mode') == 'single') %}
+              <button type="button" class="{{ 'selected' if active else '' }}" aria-label="Output {{ output }} input {{ n }}" aria-pressed="{{ 'true' if active else 'false' }}"
+                      hx-post="/ui/apply" hx-vals='{"output":"{{ output }}","input":{{ n }}}'
+                      hx-target="#state" hx-swap="outerHTML" hx-disabled-elt="#matrix button, #matrix select">{{ n }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% if output == 'A' %}
+          {% set mode = route.get('mode', 'single') %}
+          <form id="layout-form" hx-preserve hx-post="/ui/apply" hx-target="#state" hx-swap="outerHTML"
+                hx-disabled-elt="#matrix button, #matrix select">
+            <label for="layout-mode">Layout mode</label>
+            <select name="mode" id="layout-mode" hx-get="/ui/layout" hx-trigger="change" hx-target="#layout-fields" hx-swap="innerHTML">
+              {% for value, details in modes.items() %}<option value="{{ value }}" {{ 'selected' if mode == value else '' }}>{{ details[0] }}</option>{% endfor %}
+            </select>
+            <div id="layout-fields">
+              {% set fields = modes[mode][1] %}{% set current = route %}
+              {% include 'layout_fields.html' %}
+            </div>
+            <button type="submit" class="primary">Apply layout</button>
+          </form>
+        {% else %}
+          <div class="copy-state"><h3>Copy output A</h3><p>{{ 'Enabled — routing follows Output A.' if route.get('copy_a') else ('Disabled' if route.get('copy_a') is sameas false else 'Unknown') }}</p>
+          {% if route.get('copy_a') %}<p class="muted">Selecting an input does not turn off copy mode.</p>{% endif %}</div>
+        {% endif %}
+      </section>
+    {% endfor %}
+  </div>
+</div>

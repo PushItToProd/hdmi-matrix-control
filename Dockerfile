@@ -9,8 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project files
-COPY pyproject.toml LICENSE ./
+COPY pyproject.toml README.md LICENSE ./
 COPY server.py hdmi_matrix.py hdmi_matrix_status.py status_cache.py ./
+COPY matrix_web ./matrix_web
 
 # Install Python dependencies
 RUN pip install --upgrade pip && pip install --no-cache-dir -e .

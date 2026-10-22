@@ -1,0 +1,6 @@
+{% for field in fields %}
+  <label for="layout-{{ field }}">{{ labels[field] }}</label>
+  <select id="layout-{{ field }}" name="{{ field }}" required>
+    {% for n in range(1, 5) %}<option value="{{ n }}" {{ 'selected' if current.get(field, 2 if field in ['right', 'bottom', 'small'] else 1) == n else '' }}>{{ ('Arrangement ' if field == 'combination' else 'Input ') ~ n }}</option>{% endfor %}
+  </select>
+{% endfor %}

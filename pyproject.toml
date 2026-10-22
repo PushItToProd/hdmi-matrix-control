@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pyserial>=3.5",
+    "jinja2>=3.1.6",
 ]
 license = "0BSD"
 
@@ -16,9 +17,14 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
+packages = ["matrix_web"]
+include-package-data = false
 py-modules = [
     "server",
     "hdmi_matrix",
     "hdmi_matrix_status",
     "status_cache"
 ]
+
+[tool.setuptools.package-data]
+matrix_web = ["templates/*.html", "static/*.css", "static/*.js", "static/*.txt"]

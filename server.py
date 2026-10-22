@@ -14,6 +14,7 @@ import uvicorn
 
 from hdmi_matrix import HDMIMatrix, CommandRejected, CommandTimeout
 from status_cache import StatusCache, VersionConflict
+from matrix_web import create_ui_router
 from hdmi_matrix_status import (
     HDMIMatrixStatus,
     OneBigThreeSmallMode,
@@ -235,7 +236,11 @@ def set_output_input(
         inp = HDMIMatrix._validate_input(request.input)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return _execute([f'SPO{output}SI{inp}'], matrix, cache)
+    requested = None
+    if inp.isdigit():
+        route = {"mode": "single", "input": int(inp)} if output == 'A' else {"input": int(inp)}
+        requested = {output: route}
+    return _execute([f'SPO{output}SI{inp}'], matrix, cache, requested=requested)
 
 
 @app.get('/status', responses={503: {"model": ErrorResponse}})
@@ -282,7 +287,8 @@ def set_output_a_mode(
     `GET /status`, e.g. `{"mode": "pip", "main": 1, "small": 4}`.
     `{"mode": "single", "input": n}` routes input n to A full-screen.
     """
-    return _execute([_mode_command(request)], matrix, cache)
+    return _execute([_mode_command(request)], matrix, cache,
+                    requested={"A": request.model_dump(exclude_none=True, exclude={'resolution'}) | {'mode': request.mode.lower()}})
 
 
 def _mode_command(request: SetOutputAModeRequest) -> str:
@@ -303,9 +309,10 @@ def _mode_command(request: SetOutputAModeRequest) -> str:
 
 
 def _execute(commands: list[str], matrix: HDMIMatrix,
-             cache: StatusCache[HDMIMatrixStatus], if_version: int | None = None) -> SuccessResponse:
+             cache: StatusCache[HDMIMatrixStatus], if_version: int | None = None,
+             requested: dict[str, dict] | None = None) -> SuccessResponse:
     try:
-        with cache.command(if_version):
+        with cache.command(if_version, requested=requested):
             response = matrix.send_commands(commands)
         return SuccessResponse(status="success", response=response)
     except VersionConflict as e:
@@ -345,19 +352,22 @@ def apply_outputs(
     writes. Success acknowledges commands; /status still verifies application.
     """
     commands = []
+    requested = {}
     if request.A is not None:
         a = request.A
         if isinstance(a, int):
             a = SetOutputAModeRequest(mode='single', input=a)
         commands.append(_mode_command(a))
+        requested['A'] = a.model_dump(exclude_none=True, exclude={'resolution'}) | {'mode': a.mode.lower()}
     if request.B is not None:
         inp = request.B if isinstance(request.B, int) else request.B.input
         if inp not in (1, 2, 3, 4):
             raise HTTPException(status_code=400, detail="B input must be 1-4")
         commands.append(f'SPOBSI{inp:02d}')
+        requested['B'] = {'input': inp}
     if not commands:
         raise HTTPException(status_code=400, detail="at least one of A or B is required")
-    return _execute(commands, matrix, cache, request.if_version)
+    return _execute(commands, matrix, cache, request.if_version, requested)
 
 
 def raw_command_enabled() -> bool:
@@ -460,6 +470,10 @@ def raw_command(
 async def health() -> HealthResponse:
     """Health check endpoint."""
     return HealthResponse(status="ok")
+
+
+app.include_router(create_ui_router(get_matrix, get_status_cache, _status_to_json,
+                                    apply_outputs, ApplyRequest))
 
 
 if __name__ == '__main__':
