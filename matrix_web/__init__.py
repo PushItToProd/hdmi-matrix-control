@@ -86,7 +86,19 @@ def create_ui_router(get_matrix, get_cache, status_to_json, apply_outputs, apply
 
     def submit(values, matrix, cache):
         try:
-            if values.get('output') in ('A', 'B'):
+            if values.get('action') == 'swap':
+                outputs = context(cache)['state']['outputs']
+                route_a = outputs.get('A', {})
+                route_b = outputs.get('B', {})
+                if route_a.get('mode', 'single') != 'single':
+                    return render(cache, message='Cannot swap outputs while Output A uses a layout.', error=True)
+                if route_b.get('copy_a'):
+                    return render(cache, message='Cannot swap outputs while Output B is copying Output A.', error=True)
+                input_a, input_b = route_a.get('input'), route_b.get('input')
+                if input_a not in (1, 2, 3, 4) or input_b not in (1, 2, 3, 4):
+                    return render(cache, message='Cannot swap outputs until both input routes are known. Refresh from device and try again.', error=True)
+                payload = {'A': input_b, 'B': input_a}
+            elif values.get('output') in ('A', 'B'):
                 payload = {values['output']: int(values.get('input', ''))}
             else:
                 mode = values.get('mode', '')

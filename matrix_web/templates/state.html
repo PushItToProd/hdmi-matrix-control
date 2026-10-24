@@ -26,6 +26,12 @@
           {% endif %}
           <strong>Resolution</strong><p class="muted">{{ route.get('resolution') or ('Not re-read after command' if output in requested else 'Unknown') }}</p>
         </div>
+        {% if output == 'A' %}
+          {% set output_a_mode = route.get('mode', 'single') %}
+          <button type="button" class="swap-button" {{ 'disabled' if output_a_mode != 'single' else '' }}
+                  hx-post="/ui/apply" hx-vals='{"action":"swap"}'
+                  hx-target="#state" hx-swap="outerHTML" hx-disabled-elt="#matrix button, #matrix select">Swap outputs</button>
+        {% endif %}
         <div class="switcher">
           <h3>Quick switch input</h3>
           <div class="input-buttons" role="group" aria-label="Output {{ output }} input">

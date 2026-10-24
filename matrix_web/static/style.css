@@ -192,6 +192,20 @@ time {
   overflow-wrap:anywhere;
 }
 
+.swap-button {
+  width:100%;
+  margin-top:16px;
+}
+
+.swap-button:disabled {
+  cursor:not-allowed;
+}
+
+.swap-button:disabled:hover {
+  background:white;
+  border-color:#ccd6e2;
+}
+
 .switcher {
   border-top:1px solid var(--line);
   padding-top:18px;
