@@ -11,7 +11,7 @@ venv/
 .env
 .DS_Store
 *.md
-README.md
+!README.md
 _scratch/
 test_fixtures/
 scripts/
